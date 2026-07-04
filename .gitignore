@@ -1,0 +1,73 @@
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 环境变量（包含敏感信息）
+# .env
+# .env.local
+# .env.*.local
+
+# 日志文件
+logs/
+*.log
+
+# 数据库
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============================================
+# Node.js / Vue
+# ============================================
+node_modules/
+dist/
+output/
+
+# TypeScript 构建缓存
+*.tsbuildinfo
+
+# 本地环境配置
+*.local
+
+# 编辑器目录
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 测试覆盖率
+coverage/
+
+# ============================================
+# Django
+# ============================================
+backend/staticfiles/
+backend/media/
+backend/db.sqlite3
+
+
+.codebuddy
+.workbuddy
+
+INSTALL_MariaDB.md
+ENV_REQUIREMENTS.md
+
+.cadence/

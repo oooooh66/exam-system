@@ -1,0 +1,117 @@
+/**
+ * 在线考试系统 - 全局样式
+ */
+
+// ============================================
+// CSS 变量（可用于全局主题定制）
+// ============================================
+:root {
+  --primary-color: #409eff;
+  --success-color: #67c23a;
+  --warning-color: #e6a23c;
+  --danger-color: #f56c6c;
+  --info-color: #909399;
+
+  --text-primary: #303133;
+  --text-regular: #606266;
+  --text-secondary: #909399;
+  --text-placeholder: #c0c4cc;
+
+  --border-color: #dcdfe6;
+  --border-color-light: #e4e7ed;
+
+  --bg-color: #f0f2f5;
+  --bg-white: #ffffff;
+}
+
+// ============================================
+// 滚动条美化
+// ============================================
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #909399;
+}
+
+// ============================================
+// 通用工具类
+// ============================================
+.text-center { text-align: center; }
+.text-left   { text-align: left; }
+.text-right  { text-align: right; }
+
+.mt-8  { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.mt-24 { margin-top: 24px; }
+.mb-8  { margin-bottom: 8px; }
+.mb-16 { margin-bottom: 16px; }
+.mb-24 { margin-bottom: 24px; }
+
+.flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+// ============================================
+// 页面通用卡片样式
+// ============================================
+.page-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+// ============================================
+// 搜索区域通用样式
+// ============================================
+.search-bar {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+// ============================================
+// Element Plus 全局覆盖
+// ============================================
+
+// 表格操作列按钮间距
+.el-table .el-button + .el-button {
+  margin-left: 8px;
+}
+
+// 对话框标题
+.el-dialog__title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+// 分页组件
+.el-pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
+}
