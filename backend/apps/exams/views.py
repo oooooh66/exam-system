@@ -229,7 +229,6 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
     def my_exams(self, request):
         """学生查看我的考试列表"""
         if not request.user.is_student:
-            # 教师/管理员查看自己创建的考试
             qs = self.get_queryset().filter(created_by=request.user)
         else:
             qs = self.get_queryset().filter(
@@ -237,7 +236,22 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
             ).distinct()
 
         serializer = BusiExamSessionListSerializer(qs, many=True)
-        return APIResponse.success(data=serializer.data)
+        data = serializer.data
+
+        # 为学生附加提交状态
+        if request.user.is_student:
+            exam_ids = [e['id'] for e in data]
+            submissions = {
+                s.exam_session_id: s.status
+                for s in BusiExamSubmission.objects.filter(
+                    exam_session_id__in=exam_ids, student=request.user,
+                )
+            }
+            for exam in data:
+                sub_status = submissions.get(exam['id'])
+                exam['submission_status'] = sub_status
+
+        return APIResponse.success(data={'results': data, 'count': qs.count()})
 
     @action(methods=['get'], detail=True, url_path='my-result')
     def my_result(self, request, pk=None):
@@ -258,6 +272,59 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
         return APIResponse.success(data={
             'submission': BusiExamSubmissionSerializer(submission).data,
             'answers': serializer.data,
+        })
+
+    @action(methods=['get'], detail=True, url_path='grade-list')
+    def grade_list(self, request, pk=None):
+        """教师查看待批改列表（某场考试的所有未批改主观题）"""
+        exam = self.get_object()
+        ungraded = BusiStudentAnswer.objects.filter(
+            exam_session=exam,
+            is_correct__isnull=True,
+            status='submitted',
+        ).select_related('paper_question__question', 'student').order_by('student', 'paper_question__order')
+
+        serializer = BusiStudentAnswerSerializer(ungraded, many=True)
+        return APIResponse.success(data={
+            'count': ungraded.count(),
+            'answers': serializer.data,
+        })
+
+    @action(methods=['post'], detail=True, url_path='grade')
+    def grade_answer(self, request, pk=None):
+        """教师手动批改一道题"""
+        answer_id = request.data.get('answer_id')
+        score_obtained = request.data.get('score_obtained')
+
+        if not answer_id or score_obtained is None:
+            return APIResponse.error(code=400, message='缺少 answer_id 或 score_obtained')
+
+        try:
+            answer = BusiStudentAnswer.objects.get(
+                id=answer_id, exam_session_id=pk,
+            )
+        except BusiStudentAnswer.DoesNotExist:
+            return APIResponse.error(code=404, message='答题记录不存在')
+
+        answer.score_obtained = score_obtained
+        answer.is_correct = score_obtained > 0
+        answer.status = 'graded'
+        answer.save()
+
+        # 重新计算该学生的总分
+        from apps.exams.scoring import grade_exam_submission
+        submission = BusiExamSubmission.objects.filter(
+            exam_session_id=pk, student=answer.student,
+        ).first()
+        if submission:
+            submission.total_score = BusiStudentAnswer.objects.filter(
+                exam_session_id=pk, student=answer.student,
+            ).aggregate(s=models.Sum('score_obtained'))['s'] or 0
+            submission.save()
+
+        return APIResponse.success(message='批改成功', data={
+            'answer_id': answer.id,
+            'score_obtained': answer.score_obtained,
         })
 
     def _first_error(self, errors):

@@ -36,7 +36,7 @@ class BusiExamStatisticsView(APIView):
     def get(self, request, exam_id):
         try:
             exam = BusiExamSession.objects.get(id=exam_id, is_deleted=False)
-        except ExamSession.DoesNotExist:
+        except BusiExamSession.DoesNotExist:
             return APIResponse.error(code=404, message='考试场次不存在')
 
         submissions = BusiExamSubmission.objects.filter(
@@ -159,7 +159,7 @@ class BusiExportScoresView(APIView):
     def get(self, request, exam_id):
         try:
             exam = BusiExamSession.objects.get(id=exam_id, is_deleted=False)
-        except ExamSession.DoesNotExist:
+        except BusiExamSession.DoesNotExist:
             return APIResponse.error(code=404, message='考试场次不存在')
 
         submissions = BusiExamSubmission.objects.filter(

@@ -339,10 +339,23 @@ async function doRandomDraw() {
       }
       ElMessage.success(`随机抽取了题目`)
     }
+    // 去重：确保没有重复题目
+    deduplicateQuestions()
     updateTotal()
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.message || '随机抽题失败')
   } finally { drawing.value = false }
+}
+
+/** 去重 */
+function deduplicateQuestions() {
+  const seen = new Set<number>()
+  selectedQuestions.value = selectedQuestions.value.filter(q => {
+    const id = q.question_detail?.id ?? q.question_id ?? q.question
+    if (seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
 }
 
 /** 加载可选题库 */

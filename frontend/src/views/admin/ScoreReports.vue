@@ -52,6 +52,38 @@
           </el-table-column>
         </el-table>
       </template>
+
+      <!-- 手动批改区域 -->
+      <el-divider v-if="stats" />
+      <template v-if="stats">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h4>主观题批改</h4>
+          <el-button size="small" @click="loadGradeList" :loading="gradeLoading">刷新待批改</el-button>
+        </div>
+        <el-table v-if="gradeList.length" :data="gradeList" stripe max-height="400">
+          <el-table-column prop="student_name" label="学生" width="100" />
+          <el-table-column prop="question_content" label="题目" show-overflow-tooltip />
+          <el-table-column prop="question_type_display" label="题型" width="80" />
+          <el-table-column label="参考答案" show-overflow-tooltip width="200">
+            <template #default="{ row }">{{ row.correct_answer }}</template>
+          </el-table-column>
+          <el-table-column label="学生答案" show-overflow-tooltip width="200">
+            <template #default="{ row }">{{ row.answer }}</template>
+          </el-table-column>
+          <el-table-column label="分值" width="60"><template #default="{ row }">{{ row.score }}</template></el-table-column>
+          <el-table-column label="打分" width="120">
+            <template #default="{ row }">
+              <el-input-number v-model="row._score" :min="0" :max="row.score" :precision="2" :step="0.5" size="small" style="width:100px" />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="80">
+            <template #default="{ row }">
+              <el-button type="primary" size="small" @click="doGrade(row)">提交</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else-if="gradeSearched" description="没有待批改的题目" />
+      </template>
     </el-card>
   </div>
 </template>
@@ -59,7 +91,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getExamsApi } from '@/api/exams'
+import { getExamsApi, getGradeListApi, gradeAnswerApi } from '@/api/exams'
 import { getExamStatisticsApi, getExportUrl } from '@/api/reports'
 
 const exams = ref<any[]>([])
@@ -84,6 +116,37 @@ async function loadStats() {
 function exportScores() {
   if (!selectedExamId.value) return
   window.open(getExportUrl(selectedExamId.value), '_blank')
+}
+
+// ========== 手动批改 ==========
+const gradeList = ref<any[]>([])
+const gradeLoading = ref(false)
+const gradeSearched = ref(false)
+
+async function loadGradeList() {
+  if (!selectedExamId.value) return
+  gradeLoading.value = true
+  gradeSearched.value = true
+  try {
+    const res = await getGradeListApi(selectedExamId.value)
+    const items = res.data.data?.answers || []
+    // 初始化打分输入框
+    gradeList.value = items.map((a: any) => ({ ...a, _score: a.score_obtained ?? 0 }))
+  } catch { gradeList.value = [] }
+  finally { gradeLoading.value = false }
+}
+
+async function doGrade(row: any) {
+  try {
+    await gradeAnswerApi(selectedExamId.value!, {
+      answer_id: row.id,
+      score_obtained: row._score,
+    })
+    ElMessage.success(`已批改: ${row._score}/${row.score} 分`)
+    gradeList.value = gradeList.value.filter(r => r.id !== row.id)
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '批改失败')
+  }
 }
 
 onMounted(loadExams)

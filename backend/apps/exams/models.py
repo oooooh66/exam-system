@@ -80,6 +80,18 @@ class BusiExamSession(models.Model):
     def __str__(self):
         return f'{self.name} ({self.get_status_display()})'
 
+    @property
+    def computed_status(self):
+        """根据当前时间动态计算考试状态"""
+        from django.utils import timezone
+        now = timezone.now()
+        if now < self.start_time:
+            return 'upcoming'
+        elif now > self.end_time:
+            return 'finished'
+        else:
+            return 'ongoing'
+
 
 class BusiStudentAnswer(models.Model):
     """学生逐题答题记录"""

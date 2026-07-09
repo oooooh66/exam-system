@@ -30,3 +30,13 @@ export function getMyExamsApi() {
 export function getExamResultApi(examId: number) {
   return request.get(`/exams/${examId}/my-result/`)
 }
+
+/** 教师查看待批改列表 */
+export function getGradeListApi(examId: number) {
+  return request.get(`/exams/${examId}/grade-list/`)
+}
+
+/** 教师手动批改一道题 */
+export function gradeAnswerApi(examId: number, data: { answer_id: number; score_obtained: number }) {
+  return request.post(`/exams/${examId}/grade/`, data)
+}

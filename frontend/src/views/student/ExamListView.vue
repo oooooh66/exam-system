@@ -16,7 +16,10 @@
         <el-table-column prop="end_time" label="结束时间" width="160" />
         <el-table-column label="操作" width="140">
           <template #default="{ row }">
-            <el-button v-if="row.status === 'ongoing'" type="primary" size="small" @click="$router.push(`/student/exams/${row.id}`)">
+            <el-button v-if="row.submission_status === 'submitted' || row.submission_status === 'auto_submitted'" size="small" @click="$router.push(`/student/scores?exam=${row.id}`)">
+              查看成绩
+            </el-button>
+            <el-button v-else-if="row.status === 'ongoing' && row.submission_status !== 'submitted'" type="primary" size="small" @click="$router.push(`/student/exams/${row.id}`)">
               进入考试
             </el-button>
             <el-tag v-else-if="row.status === 'upcoming'" size="small" type="info">未开始</el-tag>

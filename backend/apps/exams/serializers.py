@@ -10,6 +10,7 @@ class BusiExamSessionListSerializer(serializers.ModelSerializer):
     paper_name = serializers.CharField(source='paper.name', read_only=True)
     duration = serializers.IntegerField(source='paper.duration_minutes', read_only=True)
     total_score = serializers.IntegerField(source='paper.total_score', read_only=True)
+    status = serializers.CharField(source='computed_status', read_only=True)
     student_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -103,7 +104,7 @@ class BusiStudentAnswerSerializer(serializers.ModelSerializer):
     options = serializers.JSONField(source='paper_question.question.options', read_only=True)
     correct_answer = serializers.JSONField(source='paper_question.question.correct_answer', read_only=True)
     analysis = serializers.CharField(source='paper_question.question.analysis', read_only=True)
-    score = serializers.IntegerField(source='paper_question.score', read_only=True)
+    score = serializers.DecimalField(source='paper_question.score', max_digits=5, decimal_places=2, read_only=True)
     order = serializers.IntegerField(source='paper_question.order', read_only=True)
 
     class Meta:
