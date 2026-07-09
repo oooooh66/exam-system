@@ -129,14 +129,14 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
             'start_time': exam.start_time,
             'end_time': exam.end_time,
             'submission_start_time': submission.start_time,
-            'busi_questions': [],
+            'questions': [],
         }
 
         for pq in exam.paper.paper_questions.all().select_related('question'):
             answer = BusiStudentAnswer.objects.filter(
                 exam_session=exam, student=request.user, paper_question=pq,
             ).first()
-            paper_data['busi_questions'].append({
+            paper_data['questions'].append({
                 'paper_question_id': pq.id,
                 'order': pq.order,
                 'score': pq.score,

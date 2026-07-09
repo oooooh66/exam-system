@@ -9,7 +9,7 @@ from apps.papers.serializers import (
     BusiPaperDetailSerializer,
     BusiPaperCreateSerializer,
     BusiPaperUpdateSerializer,
-    PaperBusiQuestionSerializer,
+    BusiPaperQuestionSerializer,
 )
 from apps.questions.models import BusiQuestion
 from utils.permissions import IsTeacher
@@ -18,7 +18,7 @@ from utils.response import APIResponse
 
 class BusiPaperViewSet(viewsets.ModelViewSet):
     """试卷管理 ViewSet"""
-    queryset = BusiPaper.objects.filter(is_deleted=False).prefetch_related('busi_paper_questions')
+    queryset = BusiPaper.objects.filter(is_deleted=False).prefetch_related('paper_questions')
     permission_classes = [IsTeacher]
 
     def get_serializer_class(self):
@@ -90,18 +90,18 @@ class BusiPaperViewSet(viewsets.ModelViewSet):
         except BusiQuestion.DoesNotExist:
             return APIResponse.error(code=404, message='题目不存在')
 
-        if PaperBusiQuestion.objects.filter(paper=paper, question=question).exists():
+        if BusiPaperQuestion.objects.filter(paper=paper, question=question).exists():
             return APIResponse.error(code=400, message='该题目已在试卷中')
 
         if not score:
             score = question.default_score
 
-        pq = PaperBusiQuestion.objects.create(
+        pq = BusiPaperQuestion.objects.create(
             paper=paper, question=question, score=score, order=order,
         )
         paper.update_total_score()
         return APIResponse.success(
-            data=PaperBusiQuestionSerializer(pq).data,
+            data=BusiPaperQuestionSerializer(pq).data,
             message='题目添加成功',
         )
 
@@ -109,7 +109,7 @@ class BusiPaperViewSet(viewsets.ModelViewSet):
     def remove_question(self, request, pk=None, question_id=None):
         """从试卷中移除一道题目"""
         paper = self.get_object()
-        deleted, _ = PaperBusiQuestion.objects.filter(
+        deleted, _ = BusiPaperQuestion.objects.filter(
             paper=paper, question_id=question_id,
         ).delete()
         if deleted:
@@ -121,10 +121,10 @@ class BusiPaperViewSet(viewsets.ModelViewSet):
     def update_questions(self, request, pk=None):
         """批量更新试卷题目顺序和分值"""
         paper = self.get_object()
-        questions_data = request.data.get('busi_questions', [])
+        questions_data = request.data.get('questions', [])
 
         for q_data in questions_data:
-            pq = PaperBusiQuestion.objects.filter(
+            pq = BusiPaperQuestion.objects.filter(
                 paper=paper, question_id=q_data['question_id'],
             ).first()
             if pq:
