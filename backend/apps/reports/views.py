@@ -17,13 +17,13 @@ from rest_framework.views import APIView
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side
 
-from apps.exams.models import ExamSession, ExamSubmission, StudentAnswer
-from apps.exams.serializers import ExamSubmissionSerializer, StudentAnswerSerializer
+from apps.exams.models import BusiExamSession, BusiExamSubmission, BusiStudentAnswer
+from apps.exams.serializers import BusiExamSubmissionSerializer, BusiStudentAnswerSerializer
 from utils.permissions import IsAdmin, IsTeacher
 from utils.response import APIResponse
 
 
-class ExamStatisticsView(APIView):
+class BusiExamStatisticsView(APIView):
     """
     考试统计接口
 
@@ -35,11 +35,11 @@ class ExamStatisticsView(APIView):
 
     def get(self, request, exam_id):
         try:
-            exam = ExamSession.objects.get(id=exam_id, is_deleted=False)
+            exam = BusiExamSession.objects.get(id=exam_id, is_deleted=False)
         except ExamSession.DoesNotExist:
             return APIResponse.error(code=404, message='考试场次不存在')
 
-        submissions = ExamSubmission.objects.filter(
+        submissions = BusiExamSubmission.objects.filter(
             exam_session=exam,
             status__in=('submitted', 'auto_submitted'),
         ).select_related('student')
@@ -72,7 +72,7 @@ class ExamStatisticsView(APIView):
         }
 
         # 学生成绩列表
-        student_scores = ExamSubmissionSerializer(submissions, many=True).data
+        student_scores = BusiExamSubmissionSerializer(submissions, many=True).data
 
         return APIResponse.success(data={
             'exam_id': exam.id,
@@ -89,7 +89,7 @@ class ExamStatisticsView(APIView):
         })
 
 
-class StudentScoresView(APIView):
+class BusiStudentScoresView(APIView):
     """学生个人成绩列表"""
     permission_classes = []
 
@@ -98,7 +98,7 @@ class StudentScoresView(APIView):
         if not user.is_authenticated:
             return APIResponse.error(code=401, message='请先登录')
 
-        submissions = ExamSubmission.objects.filter(
+        submissions = BusiExamSubmission.objects.filter(
             student=user,
             status__in=('submitted', 'auto_submitted'),
         ).select_related('exam_session', 'exam_session__paper').order_by('-submit_time')
@@ -119,7 +119,7 @@ class StudentScoresView(APIView):
         return APIResponse.success(data=data)
 
 
-class ExamResultDetailView(APIView):
+class BusiExamResultDetailView(APIView):
     """
     某场考试的详细结果（学生查看自己的答题详情）
     """
@@ -127,26 +127,26 @@ class ExamResultDetailView(APIView):
 
     def get(self, request, submission_id):
         try:
-            submission = ExamSubmission.objects.get(
+            submission = BusiExamSubmission.objects.get(
                 id=submission_id,
                 student=request.user,
                 status__in=('submitted', 'auto_submitted'),
             )
-        except ExamSubmission.DoesNotExist:
+        except BusiExamSubmission.DoesNotExist:
             return APIResponse.error(code=404, message='提交记录不存在')
 
-        answers = StudentAnswer.objects.filter(
+        answers = BusiStudentAnswer.objects.filter(
             exam_session=submission.exam_session,
             student=request.user,
         ).select_related('paper_question__question').order_by('paper_question__order')
 
         return APIResponse.success(data={
-            'submission': ExamSubmissionSerializer(submission).data,
-            'answers': StudentAnswerSerializer(answers, many=True).data,
+            'submission': BusiExamSubmissionSerializer(submission).data,
+            'answers': BusiStudentAnswerSerializer(answers, many=True).data,
         })
 
 
-class ExportScoresView(APIView):
+class BusiExportScoresView(APIView):
     """
     导出考试成绩 Excel
 
@@ -158,11 +158,11 @@ class ExportScoresView(APIView):
 
     def get(self, request, exam_id):
         try:
-            exam = ExamSession.objects.get(id=exam_id, is_deleted=False)
+            exam = BusiExamSession.objects.get(id=exam_id, is_deleted=False)
         except ExamSession.DoesNotExist:
             return APIResponse.error(code=404, message='考试场次不存在')
 
-        submissions = ExamSubmission.objects.filter(
+        submissions = BusiExamSubmission.objects.filter(
             exam_session=exam,
             status__in=('submitted', 'auto_submitted'),
         ).select_related('student')

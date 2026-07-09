@@ -1,11 +1,11 @@
 """考试模块 - 序列化器"""
 from rest_framework import serializers
 
-from apps.exams.models import ExamSession, StudentAnswer, ExamSubmission
-from apps.papers.serializers import PaperSerializer
+from apps.exams.models import BusiExamSession, BusiStudentAnswer, BusiExamSubmission
+from apps.papers.serializers import BusiPaperSerializer
 
 
-class ExamSessionListSerializer(serializers.ModelSerializer):
+class BusiExamSessionListSerializer(serializers.ModelSerializer):
     """考试场次列表序列化器"""
     paper_name = serializers.CharField(source='paper.name', read_only=True)
     duration = serializers.IntegerField(source='paper.duration_minutes', read_only=True)
@@ -13,7 +13,7 @@ class ExamSessionListSerializer(serializers.ModelSerializer):
     student_count = serializers.SerializerMethodField()
 
     class Meta:
-        model = ExamSession
+        model = BusiExamSession
         fields = [
             'id', 'name', 'paper', 'paper_name', 'total_score',
             'duration', 'start_time', 'end_time', 'status',
@@ -26,13 +26,13 @@ class ExamSessionListSerializer(serializers.ModelSerializer):
         return None  # None 表示开放所有人
 
 
-class ExamSessionDetailSerializer(serializers.ModelSerializer):
+class BusiExamSessionDetailSerializer(serializers.ModelSerializer):
     """考试场次详情序列化器"""
-    paper = PaperSerializer(read_only=True)
+    paper = BusiPaperSerializer(read_only=True)
     submission_status = serializers.SerializerMethodField()
 
     class Meta:
-        model = ExamSession
+        model = BusiExamSession
         fields = [
             'id', 'name', 'paper', 'start_time', 'end_time',
             'status', 'submission_status', 'created_at',
@@ -43,7 +43,7 @@ class ExamSessionDetailSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return None
-        submission = ExamSubmission.objects.filter(
+        submission = BusiExamSubmission.objects.filter(
             exam_session=obj, student=request.user,
         ).first()
         if submission:
@@ -56,7 +56,7 @@ class ExamSessionDetailSerializer(serializers.ModelSerializer):
         return None
 
 
-class ExamSessionCreateSerializer(serializers.ModelSerializer):
+class BusiExamSessionCreateSerializer(serializers.ModelSerializer):
     """创建考试场次序列化器"""
     student_ids = serializers.ListField(
         child=serializers.IntegerField(),
@@ -66,7 +66,7 @@ class ExamSessionCreateSerializer(serializers.ModelSerializer):
     )
 
     class Meta:
-        model = ExamSession
+        model = BusiExamSession
         fields = ['id', 'name', 'paper', 'start_time', 'end_time', 'student_ids']
 
     def validate(self, attrs):
@@ -76,13 +76,13 @@ class ExamSessionCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         student_ids = validated_data.pop('student_ids', [])
-        exam = ExamSession.objects.create(**validated_data, created_by=self.context['request'].user)
+        exam = BusiExamSession.objects.create(**validated_data, created_by=self.context['request'].user)
         if student_ids:
             exam.students.set(student_ids)
         return exam
 
 
-class AnswerSubmitSerializer(serializers.Serializer):
+class BusiAnswerSubmitSerializer(serializers.Serializer):
     """提交答案序列化器"""
     answers = serializers.ListField(
         child=serializers.DictField(),
@@ -95,7 +95,7 @@ class AnswerSubmitSerializer(serializers.Serializer):
         return value
 
 
-class StudentAnswerSerializer(serializers.ModelSerializer):
+class BusiStudentAnswerSerializer(serializers.ModelSerializer):
     """学生答题记录序列化器"""
     question_content = serializers.CharField(source='paper_question.question.content', read_only=True)
     question_type = serializers.CharField(source='paper_question.question.question_type', read_only=True)
@@ -107,7 +107,7 @@ class StudentAnswerSerializer(serializers.ModelSerializer):
     order = serializers.IntegerField(source='paper_question.order', read_only=True)
 
     class Meta:
-        model = StudentAnswer
+        model = BusiStudentAnswer
         fields = [
             'id', 'paper_question', 'question_content', 'question_type',
             'question_type_display', 'options', 'answer', 'correct_answer',
@@ -116,13 +116,13 @@ class StudentAnswerSerializer(serializers.ModelSerializer):
         ]
 
 
-class ExamSubmissionSerializer(serializers.ModelSerializer):
+class BusiExamSubmissionSerializer(serializers.ModelSerializer):
     """考试提交记录序列化器"""
     student_name = serializers.CharField(source='student.username', read_only=True)
     exam_name = serializers.CharField(source='exam_session.name', read_only=True)
 
     class Meta:
-        model = ExamSubmission
+        model = BusiExamSubmission
         fields = [
             'id', 'exam_session', 'exam_name', 'student', 'student_name',
             'status', 'start_time', 'submit_time', 'total_score', 'created_at',

@@ -13,16 +13,16 @@ Model 的作用：
   4. 每个 Model 实例 = 数据库中的一行记录
 
 例子：
-  User.objects.create(username='admin', password='...')
+  BusiUser.objects.create(username='admin', password='...')
     → Django ORM 翻译成 INSERT INTO users VALUES (...)
-  User.objects.filter(role='student')
+  BusiUser.objects.filter(role='student')
     → Django ORM 翻译成 SELECT * FROM users WHERE role='student'
 """
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 
-class User(AbstractUser):
+class BusiUser(AbstractUser):
     """
     【数据库表映射类】自定义用户模型
 
@@ -100,7 +100,7 @@ class User(AbstractUser):
     # ==================== Meta 内部类：表级别配置 ====================
     class Meta:
         # db_table: 指定数据库中的表名（不指定则 Django 自动生成 appname_modelname）
-        db_table = 'users'
+        db_table = 'busi_users'
         # verbose_name: 在 Django Admin 后台显示的中文名称（单数）
         verbose_name = '用户'
         # verbose_name_plural: 复数形式

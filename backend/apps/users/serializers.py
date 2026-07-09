@@ -21,7 +21,7 @@ Serializer 的作用：
 from rest_framework import serializers
 
 # ==================== 导入我们自定义的 User 模型 ====================
-from apps.users.models import User
+from apps.users.models import BusiUser
 
 # ==================== 导入 SimpleJWT 的 Token 序列化器（我们要继承它来扩展） ====================
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -142,14 +142,14 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     # role 字段：用户角色，限定只能选预定义的选项
     role = serializers.ChoiceField(
-        choices=User.Role.choices,
+        choices=BusiUser.Role.choices,
         help_text='用户角色',
     )
 
     # ==================== Meta 内部类：关联 Model 和字段 ====================
     class Meta:
         # model: 告诉 Serializer 这个序列化器对应哪个数据库表
-        model = User
+        model = BusiUser
         # fields: 指定哪些字段参与序列化/反序列化
         #   - password 和 password_confirm 在上面单独定义了
         #   - id 是只读的（由数据库自动生成）
@@ -174,7 +174,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         value: 前端传来的用户名（如 "newuser"）
         返回: 校验通过则返回原值；失败则抛出 ValidationError
         """
-        if User.objects.filter(username=value, is_deleted=False).exists():
+        if BusiUser.objects.filter(username=value, is_deleted=False).exists():
             raise serializers.ValidationError('该用户名已被注册')
         return value  # 校验通过，原样返回
 
@@ -227,7 +227,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         validated_data['password'] = make_password(validated_data['password'])
 
         # 3. 调用父类 ModelSerializer 的 create() 方法
-        #    内部执行：User.objects.create(**validated_data)
+        #    内部执行：BusiUser.objects.create(**validated_data)
         #    Django ORM 翻译成 SQL：INSERT INTO users VALUES (...)
         return super().create(validated_data)
 
@@ -235,7 +235,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 # ============================================
 # 3. 个人信息序列化器 —— 处理 GET/PUT /api/auth/profile/
 # ============================================
-class UserProfileSerializer(serializers.ModelSerializer):
+class BusiUserProfileSerializer(serializers.ModelSerializer):
     """
     【个人信息】查看和修改个人资料
 
@@ -250,7 +250,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
 
     class Meta:
-        model = User
+        model = BusiUser
         fields = [
             'id', 'username', 'email', 'role', 'role_display',
             'date_joined', 'last_login', 'created_at', 'updated_at',
@@ -302,20 +302,20 @@ class ChangePasswordSerializer(serializers.Serializer):
 # ============================================
 # 5. 管理员用户管理序列化器 —— 处理 /api/users/ CRUD
 # ============================================
-class UserManageSerializer(serializers.ModelSerializer):
+class BusiUserManageSerializer(serializers.ModelSerializer):
     """
     【管理员专用】批量管理用户的增删改查
 
     与 RegisterSerializer 的区别：
       - RegisterSerializer：任何人都可以注册（公开接口）
-      - UserManageSerializer：只有管理员可以操作（需要 IsAdmin 权限）
+      - BusiUserManageSerializer：只有管理员可以操作（需要 IsAdmin 权限）
       - 这个序列化器可以编辑更多字段（email、is_active 等）
     """
     password = serializers.CharField(write_only=True, min_length=6, max_length=128, required=False)
     role_display = serializers.CharField(source='get_role_display', read_only=True)
 
     class Meta:
-        model = User
+        model = BusiUser
         fields = [
             'id', 'username', 'email', 'password', 'role', 'role_display',
             'is_active', 'date_joined', 'last_login', 'created_at', 'updated_at',
@@ -331,7 +331,7 @@ class UserManageSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         if password:
             validated_data['password'] = make_password(password)
-        # 调用父类 create() → User.objects.create(**validated_data)
+        # 调用父类 create() → BusiUser.objects.create(**validated_data)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):

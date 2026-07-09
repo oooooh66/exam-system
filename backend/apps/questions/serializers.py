@@ -3,15 +3,15 @@
 """
 from rest_framework import serializers
 
-from apps.questions.models import QuestionCategory, Question
+from apps.questions.models import BusiQuestionCategory, BusiQuestion
 
 
-class QuestionCategorySerializer(serializers.ModelSerializer):
+class BusiQuestionCategorySerializer(serializers.ModelSerializer):
     """题目分类序列化器"""
     question_count = serializers.SerializerMethodField(read_only=True, help_text='该分类下的题目数量')
 
     class Meta:
-        model = QuestionCategory
+        model = BusiQuestionCategory
         fields = [
             'id', 'name', 'description', 'question_count',
             'created_by', 'created_at', 'updated_at',
@@ -20,10 +20,10 @@ class QuestionCategorySerializer(serializers.ModelSerializer):
 
     def get_question_count(self, obj):
         """获取该分类下未删除的题目数量"""
-        return Question.objects.filter(category=obj, is_deleted=False).count()
+        return BusiQuestion.objects.filter(category=obj, is_deleted=False).count()
 
 
-class QuestionSerializer(serializers.ModelSerializer):
+class BusiQuestionSerializer(serializers.ModelSerializer):
     """题目序列化器（完整信息）"""
     question_type_display = serializers.CharField(source='get_question_type_display', read_only=True)
     difficulty_display = serializers.CharField(source='get_difficulty_display', read_only=True)
@@ -33,12 +33,12 @@ class QuestionSerializer(serializers.ModelSerializer):
     category = serializers.CharField(required=False, allow_null=True, allow_blank=True, help_text='分类ID或分类名称')
 
     class Meta:
-        model = Question
+        model = BusiQuestion
         fields = [
             'id', 'question_type', 'question_type_display',
             'content', 'options', 'correct_answer', 'analysis',
             'category', 'category_name', 'difficulty', 'difficulty_display',
-            'default_score', 'created_by', 'created_at', 'updated_at',
+            'default_score', 'org_id', 'org_nm', 'created_by', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
 
@@ -54,7 +54,7 @@ class QuestionSerializer(serializers.ModelSerializer):
             return None
         # 数字字符串 → 检查对应 ID 的分类是否存在
         if str(value).isdigit():
-            if not QuestionCategory.objects.filter(id=int(value), is_deleted=False).exists():
+            if not BusiQuestionCategory.objects.filter(id=int(value), is_deleted=False).exists():
                 raise serializers.ValidationError(f'分类 ID {value} 不存在')
         # 返回原始值（字符串），分类对象转换放到 validate() 里做
         return value
@@ -71,8 +71,8 @@ class QuestionSerializer(serializers.ModelSerializer):
         if value is None or value == '':
             return None
         if str(value).isdigit():
-            return QuestionCategory.objects.get(id=int(value), is_deleted=False)
-        category, _ = QuestionCategory.objects.get_or_create(
+            return BusiQuestionCategory.objects.get(id=int(value), is_deleted=False)
+        category, _ = BusiQuestionCategory.objects.get_or_create(
             name=str(value).strip(),
             defaults={'created_by': self.context['request'].user},
         )
@@ -110,7 +110,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class QuestionListSerializer(serializers.ModelSerializer):
+class BusiQuestionListSerializer(serializers.ModelSerializer):
     """
     题目列表序列化器（简化版，不包含正确答案和解析）
 
@@ -122,16 +122,16 @@ class QuestionListSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
 
     class Meta:
-        model = Question
+        model = BusiQuestion
         fields = [
             'id', 'question_type', 'question_type_display',
             'content', 'options',
             'category', 'category_name', 'difficulty', 'difficulty_display',
-            'default_score', 'created_at',
+            'default_score', 'org_nm', 'created_at',
         ]
 
 
-class QuestionImportSerializer(serializers.Serializer):
+class BusiQuestionImportSerializer(serializers.Serializer):
     """
     Excel 批量导入题目的校验序列化器
 

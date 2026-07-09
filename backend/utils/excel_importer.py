@@ -17,7 +17,7 @@ import traceback
 import openpyxl
 from django.db import transaction
 
-from apps.questions.models import QuestionCategory, Question
+from apps.questions.models import BusiQuestionCategory, BusiQuestion
 
 logger = logging.getLogger('apps')
 
@@ -100,7 +100,7 @@ def import_questions_from_excel(file_obj, user, default_category_id=None):
         # 批量创建（事务保护）
         if questions_to_create:
             with transaction.atomic():
-                Question.objects.bulk_create(questions_to_create)
+                BusiQuestion.objects.bulk_create(questions_to_create)
 
     except Exception as e:
         logger.error(f'Excel 导入异常: {traceback.format_exc()}')
@@ -167,7 +167,7 @@ def _parse_excel_row(row, header_map, user, default_category_id):
     # 分类处理
     category = None
     if category_name:
-        category, _ = QuestionCategory.objects.get_or_create(
+        category, _ = BusiQuestionCategory.objects.get_or_create(
             name=category_name,
             defaults={'created_by': user},
         )

@@ -1,13 +1,13 @@
 """考试模块 - 数据模型"""
 from django.db import models
-from apps.users.models import User
-from apps.papers.models import Paper, PaperQuestion
+from apps.users.models import BusiUser
+from apps.papers.models import BusiPaper, BusiPaperQuestion
 
 
-class ExamSession(models.Model):
+class BusiExamSession(models.Model):
     """考试场次"""
     paper = models.ForeignKey(
-        Paper, on_delete=models.CASCADE, related_name='exam_sessions',
+        BusiPaper, on_delete=models.CASCADE, related_name='exam_sessions',
         verbose_name='试卷',
         help_text='本次考试使用的试卷',
         db_comment='考试使用的试卷ID',
@@ -29,7 +29,7 @@ class ExamSession(models.Model):
         db_comment='考试结束时间，到达后自动提交',
     )
     students = models.ManyToManyField(
-        User, blank=True, related_name='assigned_exams',
+        BusiUser, blank=True, related_name='assigned_exams',
         verbose_name='指定参考学生',
         help_text='为空则开放给所有学生参加',
         db_comment='指定参考学生（为空则所有人可参加）',
@@ -47,7 +47,7 @@ class ExamSession(models.Model):
         db_comment='考试状态：upcoming=未开始, ongoing=进行中, finished=已结束',
     )
     created_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, related_name='created_exams',
+        BusiUser, on_delete=models.SET_NULL, null=True, related_name='created_exams',
         verbose_name='发布人',
         help_text='发布该考试的教师或管理员',
         db_comment='发布人用户ID',
@@ -72,7 +72,7 @@ class ExamSession(models.Model):
     )
 
     class Meta:
-        db_table = 'exam_sessions'
+        db_table = 'busi_exam_sessions'
         verbose_name = '考试场次'
         verbose_name_plural = verbose_name
         ordering = ['-start_time']
@@ -81,22 +81,22 @@ class ExamSession(models.Model):
         return f'{self.name} ({self.get_status_display()})'
 
 
-class StudentAnswer(models.Model):
+class BusiStudentAnswer(models.Model):
     """学生逐题答题记录"""
     exam_session = models.ForeignKey(
-        ExamSession, on_delete=models.CASCADE, related_name='student_answers',
+        BusiExamSession, on_delete=models.CASCADE, related_name='student_answers',
         verbose_name='考试场次',
         help_text='所属的考试',
         db_comment='所属考试场次ID',
     )
     student = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name='exam_answers',
+        BusiUser, on_delete=models.CASCADE, related_name='exam_answers',
         verbose_name='学生',
         help_text='答题的学生',
         db_comment='答题学生用户ID',
     )
     paper_question = models.ForeignKey(
-        PaperQuestion, on_delete=models.CASCADE, related_name='student_answers',
+        BusiPaperQuestion, on_delete=models.CASCADE, related_name='student_answers',
         verbose_name='试卷题目',
         help_text='对应的试卷题目及其分值',
         db_comment='对应的试卷题目ID',
@@ -145,7 +145,7 @@ class StudentAnswer(models.Model):
     )
 
     class Meta:
-        db_table = 'student_answers'
+        db_table = 'busi_student_answers'
         verbose_name = '学生答题记录'
         verbose_name_plural = verbose_name
         unique_together = [['exam_session', 'student', 'paper_question']]
@@ -157,16 +157,16 @@ class StudentAnswer(models.Model):
         return f'{self.student.username} - {self.paper_question.question.content[:20]}'
 
 
-class ExamSubmission(models.Model):
+class BusiExamSubmission(models.Model):
     """考试提交记录"""
     exam_session = models.ForeignKey(
-        ExamSession, on_delete=models.CASCADE, related_name='submissions',
+        BusiExamSession, on_delete=models.CASCADE, related_name='submissions',
         verbose_name='考试场次',
         help_text='所属的考试',
         db_comment='所属考试场次ID',
     )
     student = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name='exam_submissions',
+        BusiUser, on_delete=models.CASCADE, related_name='exam_submissions',
         verbose_name='学生',
         help_text='提交考试的学生',
         db_comment='提交考试的学生用户ID',
@@ -222,7 +222,7 @@ class ExamSubmission(models.Model):
     )
 
     class Meta:
-        db_table = 'exam_submissions'
+        db_table = 'busi_exam_submissions'
         verbose_name = '考试提交记录'
         verbose_name_plural = verbose_name
         unique_together = [['exam_session', 'student']]

@@ -2,10 +2,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from apps.papers.views import PaperViewSet
+from apps.papers.views import BusiPaperViewSet
 
 router = DefaultRouter()
-router.register(r'papers', PaperViewSet, basename='paper')
+router.register(r'papers', BusiPaperViewSet, basename='paper')
 
 urlpatterns = [
     path('', include(router.urls)),

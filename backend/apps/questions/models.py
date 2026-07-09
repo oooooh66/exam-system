@@ -1,9 +1,9 @@
 """题库模块 - 数据模型"""
 from django.db import models
-from apps.users.models import User
+from apps.users.models import BusiUser
 
 
-class QuestionCategory(models.Model):
+class BusiQuestionCategory(models.Model):
     """题目分类"""
     name = models.CharField(
         max_length=100, unique=True,
@@ -24,7 +24,7 @@ class QuestionCategory(models.Model):
         db_comment='软删除标记：1=已删除，0=正常',
     )
     created_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True,
+        BusiUser, on_delete=models.SET_NULL, null=True,
         related_name='question_categories',
         verbose_name='创建人',
         help_text='创建该分类的用户',
@@ -44,7 +44,7 @@ class QuestionCategory(models.Model):
     )
 
     class Meta:
-        db_table = 'question_categories'
+        db_table = 'busi_question_categories'
         verbose_name = '题目分类'
         verbose_name_plural = verbose_name
         ordering = ['name']
@@ -53,7 +53,7 @@ class QuestionCategory(models.Model):
         return self.name
 
 
-class Question(models.Model):
+class BusiQuestion(models.Model):
     """题目模型，支持5种题型"""
 
     class QuestionType(models.TextChoices):
@@ -97,7 +97,7 @@ class Question(models.Model):
         db_comment='答案解析，学生查看成绩时展示',
     )
     category = models.ForeignKey(
-        QuestionCategory, on_delete=models.SET_NULL, null=True, blank=True,
+        BusiQuestionCategory, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='questions',
         verbose_name='所属分类',
         help_text='题目归入的分类，便于管理和筛选',
@@ -109,6 +109,18 @@ class Question(models.Model):
         help_text='easy=简单，medium=中等，hard=困难',
         db_comment='难度等级：easy=简单, medium=中等, hard=困难',
     )
+    org_id = models.CharField(
+        max_length=50, blank=True, default='',
+        verbose_name='机构号',
+        help_text='试题所属机构的唯一编码',
+        db_comment='机构唯一编码',
+    )
+    org_nm = models.CharField(
+        max_length=100, blank=True, default='',
+        verbose_name='机构名',
+        help_text='试题所属机构的名称',
+        db_comment='机构名称',
+    )
     default_score = models.DecimalField(
         max_digits=5, decimal_places=2, default=5.00,
         verbose_name='默认分值',
@@ -116,7 +128,7 @@ class Question(models.Model):
         db_comment='题目默认分值，支持两位小数，试卷中可覆盖',
     )
     created_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True,
+        BusiUser, on_delete=models.SET_NULL, null=True,
         related_name='created_questions',
         verbose_name='创建人',
         help_text='出题人',
@@ -142,7 +154,7 @@ class Question(models.Model):
     )
 
     class Meta:
-        db_table = 'questions'
+        db_table = 'busi_questions'
         verbose_name = '题目'
         verbose_name_plural = verbose_name
         ordering = ['-created_at']

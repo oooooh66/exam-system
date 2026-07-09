@@ -13,26 +13,26 @@ from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.parsers import MultiPartParser
 
-from apps.questions.models import QuestionCategory, Question
+from apps.questions.models import BusiQuestionCategory, BusiQuestion
 from apps.questions.serializers import (
-    QuestionCategorySerializer,
-    QuestionSerializer,
-    QuestionListSerializer,
-    QuestionImportSerializer,
+    BusiQuestionCategorySerializer,
+    BusiQuestionSerializer,
+    BusiQuestionListSerializer,
+    BusiQuestionImportSerializer,
 )
 from utils.excel_importer import import_questions_from_excel
 from utils.permissions import IsAdmin, IsTeacher
 from utils.response import APIResponse
 
 
-class QuestionCategoryViewSet(viewsets.ModelViewSet):
+class BusiQuestionCategoryViewSet(viewsets.ModelViewSet):
     """
     题目分类管理 ViewSet
 
     教师和管理员可以管理分类，学生只读。
     """
-    queryset = QuestionCategory.objects.filter(is_deleted=False)
-    serializer_class = QuestionCategorySerializer
+    queryset = BusiQuestionCategory.objects.filter(is_deleted=False)
+    serializer_class = BusiQuestionCategorySerializer
     permission_classes = [IsTeacher]
     search_fields = ['name']
     ordering_fields = ['name', 'created_at']
@@ -87,15 +87,16 @@ class QuestionCategoryViewSet(viewsets.ModelViewSet):
         return '参数错误'
 
 
-class QuestionFilter(django_filters.FilterSet):
+class BusiQuestionFilter(django_filters.FilterSet):
     """题目过滤器，支持多选（逗号分隔的多个值）"""
     question_type = django_filters.CharFilter(method='filter_question_type')
     difficulty = django_filters.CharFilter(method='filter_difficulty')
     category = django_filters.CharFilter(method='filter_category')
+    org_id = django_filters.CharFilter(method='filter_org_id')
 
     class Meta:
-        model = Question
-        fields = ['question_type', 'difficulty', 'category']
+        model = BusiQuestion
+        fields = ['question_type', 'difficulty', 'category', 'org_id']
 
     def _split_values(self, value):
         """将逗号分隔的字符串拆分为列表"""
@@ -127,30 +128,36 @@ class QuestionFilter(django_filters.FilterSet):
                 pass
         return queryset
 
+    def filter_org_id(self, queryset, name, value):
+        """机构筛选：按org_id精确匹配"""
+        if value:
+            return queryset.filter(org_id=value)
+        return queryset
 
-class QuestionViewSet(viewsets.ModelViewSet):
+
+class BusiQuestionViewSet(viewsets.ModelViewSet):
     """
     题目管理 ViewSet
 
     教师和管理员可以管理题目（增删改查 + 导入），学生只读列表。
     """
-    queryset = Question.objects.filter(is_deleted=False).select_related('category')
+    queryset = BusiQuestion.objects.filter(is_deleted=False).select_related('category')
     permission_classes = [IsTeacher]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_class = QuestionFilter
+    filterset_class = BusiQuestionFilter
     search_fields = ['content']
     ordering_fields = ['id', 'default_score', 'created_at', 'difficulty']
 
     def get_serializer_class(self):
         """根据 action 选择不同的序列化器"""
         if self.action == 'list':
-            return QuestionListSerializer
-        return QuestionSerializer
+            return BusiQuestionListSerializer
+        return BusiQuestionSerializer
 
     def get_permissions(self):
         """GET 请求允许所有人查看，其他操作需要教师权限"""
-        if self.action in ('list', 'retrieve', 'import_questions'):
-            return []  # retrieve 需要看详情时也要权限？按需求教师/管理员
+        if self.action in ('list', 'retrieve', 'import_questions', 'orgs'):
+            return []
         return [IsTeacher()]
 
     def perform_create(self, serializer):
@@ -167,29 +174,46 @@ class QuestionViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
-        serializer = QuestionSerializer(instance)
+        serializer = BusiQuestionSerializer(instance)
         return APIResponse.success(data=serializer.data)
 
     def create(self, request, *args, **kwargs):
-        serializer = QuestionSerializer(data=request.data)
+        serializer = BusiQuestionSerializer(data=request.data)
         if not serializer.is_valid():
             return APIResponse.error(code=400, message=self._first_error(serializer.errors))
         self.perform_create(serializer)
-        return APIResponse.created(data=QuestionSerializer(serializer.instance).data)
+        return APIResponse.created(data=BusiQuestionSerializer(serializer.instance).data)
 
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
-        serializer = QuestionSerializer(instance, data=request.data, partial=partial)
+        serializer = BusiQuestionSerializer(instance, data=request.data, partial=partial)
         if not serializer.is_valid():
             return APIResponse.error(code=400, message=self._first_error(serializer.errors))
         serializer.save()
-        return APIResponse.success(data=QuestionSerializer(serializer.instance).data)
+        return APIResponse.success(data=BusiQuestionSerializer(serializer.instance).data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
         return APIResponse.success(message='题目已删除')
+
+    @action(
+        methods=['get'],
+        detail=False,
+        url_path='orgs',
+    )
+    def orgs(self, request):
+        """
+        获取所有不重复的机构列表（用于前端下拉筛选）
+
+        GET /api/questions/orgs/
+        返回: [{org_id: "ORG001", org_nm: "机构A"}, ...]
+        """
+        qs = BusiQuestion.objects.filter(is_deleted=False).exclude(
+            org_nm=''
+        ).values('org_id', 'org_nm').distinct().order_by('org_id')
+        return APIResponse.success(data=list(qs))
 
     @action(
         methods=['post'],
@@ -205,7 +229,7 @@ class QuestionViewSet(viewsets.ModelViewSet):
         POST /api/questions/import/
         表单字段：file（Excel 文件），category_id（可选）
         """
-        serializer = QuestionImportSerializer(data=request.data)
+        serializer = BusiQuestionImportSerializer(data=request.data)
         if not serializer.is_valid():
             return APIResponse.error(code=400, message=self._first_error(serializer.errors))
 

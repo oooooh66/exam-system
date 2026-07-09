@@ -9,7 +9,7 @@
         ↓  检查 request.user.role == 'admin' ？
         ↓  YES → 放行，继续执行 View 的 destroy() 方法
         ↓  NO  → 返回 403 Forbidden {"code":403, "message":"您没有执行此操作的权限"}
-  3. View 方法执行 → UserViewSet.destroy() → 软删除用户
+  3. View 方法执行 → BusiUserViewSet.destroy() → 软删除用户
 
 DRF 的权限执行时机（两个检查点）：
   has_permission(request, view)      → 在 View 方法执行之前调用（列表/创建接口）

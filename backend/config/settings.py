@@ -161,7 +161,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # ============================================
 # 自定义用户模型
 # 重要：必须在第一次 migrate 之前设置，否则会导致兼容问题
-AUTH_USER_MODEL = 'users.User'
+AUTH_USER_MODEL = 'users.BusiUser'
 
 # ============================================
 # Django REST Framework 配置

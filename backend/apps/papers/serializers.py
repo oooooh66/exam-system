@@ -3,35 +3,35 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from apps.papers.models import Paper, PaperQuestion
-from apps.questions.serializers import QuestionSerializer
+from apps.papers.models import BusiPaper, BusiPaperQuestion, BusiPaperRandomRule
+from apps.questions.serializers import BusiQuestionSerializer
 
 
-class PaperQuestionSerializer(serializers.ModelSerializer):
+class PaperBusiQuestionSerializer(serializers.ModelSerializer):
     """试卷题目关联序列化器"""
-    question_detail = QuestionSerializer(source='question', read_only=True)
+    question_detail = BusiQuestionSerializer(source='question', read_only=True)
 
     class Meta:
-        model = PaperQuestion
+        model = BusiPaperQuestion
         fields = ['id', 'question', 'question_detail', 'order', 'score']
 
 
-class PaperQuestionCreateSerializer(serializers.Serializer):
+class BusiPaperQuestionCreateSerializer(serializers.Serializer):
     """
     创建试卷题目关联的简化序列化器
 
     调用链（以 POST /api/papers/ 为例）：
       前端 JSON → {"questions":[{"question_id":5,"score":4.5,"order":0}, ...]}
         ↓
-      PaperCreateSerializer(data=request.data)
+      BusiPaperCreateSerializer(data=request.data)
         ↓ 嵌套校验 questions 列表
-      ★ PaperQuestionCreateSerializer(data=each_question)
+      ★ BusiPaperQuestionCreateSerializer(data=each_question)
         ↓ 校验每个字段
         question_id: IntegerField → 必须是整数
         score: ★ DecimalField → 支持小数如 4.5
         order: IntegerField → 必须是整数
         ↓ 校验通过
-      PaperCreateSerializer.create() → PaperQuestion.objects.create(score=4.5, ...)
+      BusiPaperCreateSerializer.create() → PaperBusiQuestion.objects.create(score=4.5, ...)
         ↓
       INSERT INTO paper_questions (score, ...) VALUES (4.5, ...)
 
@@ -59,13 +59,13 @@ class PaperQuestionCreateSerializer(serializers.Serializer):
     )
 
 
-class PaperSerializer(serializers.ModelSerializer):
+class BusiPaperSerializer(serializers.ModelSerializer):
     """试卷列表序列化器（不含题目详情，减少数据传输量）"""
     question_count = serializers.SerializerMethodField()
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
 
     class Meta:
-        model = Paper
+        model = BusiPaper
         fields = [
             'id', 'name', 'description', 'total_score', 'pass_score',
             'duration_minutes', 'question_count', 'created_by', 'created_by_name',
@@ -76,39 +76,39 @@ class PaperSerializer(serializers.ModelSerializer):
         return obj.paper_questions.count()
 
 
-class PaperDetailSerializer(serializers.ModelSerializer):
+class BusiPaperDetailSerializer(serializers.ModelSerializer):
     """试卷详情序列化器（含完整题目列表）"""
-    paper_questions = PaperQuestionSerializer(many=True, read_only=True)
+    paper_questions = PaperBusiQuestionSerializer(many=True, read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
 
     class Meta:
-        model = Paper
+        model = BusiPaper
         fields = [
             'id', 'name', 'description', 'total_score', 'pass_score',
-            'duration_minutes', 'paper_questions', 'created_by', 'created_by_name',
+            'duration_minutes', 'busi_paper_questions', 'created_by', 'created_by_name',
             'created_at', 'updated_at',
         ]
 
 
-class PaperCreateSerializer(serializers.ModelSerializer):
+class BusiPaperCreateSerializer(serializers.ModelSerializer):
     """创建试卷序列化器"""
-    questions = PaperQuestionCreateSerializer(many=True, write_only=True, required=False)
+    questions = BusiPaperQuestionCreateSerializer(many=True, write_only=True, required=False)
 
     class Meta:
-        model = Paper
+        model = BusiPaper
         fields = [
-            'id', 'name', 'description', 'pass_score', 'duration_minutes', 'questions',
+            'id', 'name', 'description', 'pass_score', 'duration_minutes', 'busi_questions',
         ]
 
     def create(self, validated_data):
-        questions_data = validated_data.pop('questions', [])
-        paper = Paper.objects.create(**validated_data, created_by=self.context['request'].user)
+        questions_data = validated_data.pop('busi_questions', [])
+        paper = BusiPaper.objects.create(**validated_data, created_by=self.context['request'].user)
 
         # 关联题目
         for q_data in questions_data:
-            from apps.questions.models import Question
-            question = Question.objects.get(id=q_data['question_id'], is_deleted=False)
-            PaperQuestion.objects.create(
+            from apps.questions.models import BusiQuestion
+            question = BusiQuestion.objects.get(id=q_data['question_id'], is_deleted=False)
+            PaperBusiQuestion.objects.create(
                 paper=paper,
                 question=question,
                 score=q_data.get('score', question.default_score),
@@ -120,16 +120,16 @@ class PaperCreateSerializer(serializers.ModelSerializer):
         return paper
 
 
-class PaperUpdateSerializer(serializers.ModelSerializer):
+class BusiPaperUpdateSerializer(serializers.ModelSerializer):
     """修改试卷序列化器"""
-    questions = PaperQuestionCreateSerializer(many=True, write_only=True, required=False)
+    questions = BusiPaperQuestionCreateSerializer(many=True, write_only=True, required=False)
 
     class Meta:
-        model = Paper
-        fields = ['name', 'description', 'pass_score', 'duration_minutes', 'questions']
+        model = BusiPaper
+        fields = ['name', 'description', 'pass_score', 'duration_minutes', 'busi_questions']
 
     def update(self, instance, validated_data):
-        questions_data = validated_data.pop('questions', None)
+        questions_data = validated_data.pop('busi_questions', None)
 
         # 更新基本字段
         for attr, value in validated_data.items():
@@ -140,9 +140,9 @@ class PaperUpdateSerializer(serializers.ModelSerializer):
         if questions_data is not None:
             instance.paper_questions.all().delete()
             for q_data in questions_data:
-                from apps.questions.models import Question
-                question = Question.objects.get(id=q_data['question_id'], is_deleted=False)
-                PaperQuestion.objects.create(
+                from apps.questions.models import BusiQuestion
+                question = BusiQuestion.objects.get(id=q_data['question_id'], is_deleted=False)
+                PaperBusiQuestion.objects.create(
                     paper=instance,
                     question=question,
                     score=q_data.get('score', question.default_score),
@@ -151,3 +151,35 @@ class PaperUpdateSerializer(serializers.ModelSerializer):
             instance.update_total_score()
 
         return instance
+
+
+class BusiPaperRandomRuleSerializer(serializers.ModelSerializer):
+    """随机抽题规则序列化器"""
+    category_name = serializers.CharField(source='category.name', read_only=True)
+
+    class Meta:
+        model = BusiPaperRandomRule
+        fields = ['id', 'paper', 'category', 'category_name', 'question_count', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+
+class BusiPaperRandomDrawSerializer(serializers.Serializer):
+    """
+    随机抽题请求序列化器
+
+    前端传入一组规则，后端按规则随机选取题目并添加到试卷中。
+    """
+    rules = serializers.ListField(
+        child=serializers.DictField(
+            child=serializers.IntegerField(min_value=1),
+        ),
+        help_text='规则列表 [{"category_id": 1, "question_count": 5}, ...]',
+    )
+
+    def validate_rules(self, value):
+        if not value:
+            raise serializers.ValidationError('抽题规则不能为空')
+        for rule in value:
+            if 'category_id' not in rule or 'question_count' not in rule:
+                raise serializers.ValidationError('每条规则必须包含 category_id 和 question_count')
+        return value

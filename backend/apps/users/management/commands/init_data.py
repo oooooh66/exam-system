@@ -10,7 +10,7 @@
     python manage.py init_data
 """
 from django.core.management.base import BaseCommand
-from apps.users.models import User
+from apps.users.models import BusiUser
 
 
 class Command(BaseCommand):
@@ -18,7 +18,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # 创建管理员
-        admin, created = User.objects.get_or_create(
+        admin, created = BusiUser.objects.get_or_create(
             username='admin',
             defaults={'role': 'admin', 'is_staff': True, 'is_superuser': True},
         )
@@ -30,7 +30,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING('管理员已存在，跳过'))
 
         # 创建教师
-        teacher, created = User.objects.get_or_create(
+        teacher, created = BusiUser.objects.get_or_create(
             username='teacher',
             defaults={'role': 'teacher'},
         )
@@ -42,7 +42,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING('教师已存在，跳过'))
 
         # 创建学生
-        student, created = User.objects.get_or_create(
+        student, created = BusiUser.objects.get_or_create(
             username='student',
             defaults={'role': 'student'},
         )

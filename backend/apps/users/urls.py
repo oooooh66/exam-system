@@ -17,7 +17,7 @@
 
 Router 的作用：
   ViewSet + Router 自动创建标准的 RESTful 路由，不需要手动写每一条。
-  例如 router.register(r'users', UserViewSet) 会自动生成：
+  例如 router.register(r'users', BusiUserViewSet) 会自动生成：
     GET    /api/users/        → list
     POST   /api/users/        → create
     GET    /api/users/{id}/   → retrieve
@@ -33,20 +33,20 @@ from apps.users.views import (
     CustomTokenObtainPairView, # 登录
     ProfileView,                # 个人信息
     ChangePasswordView,         # 修改密码
-    UserViewSet,               # 管理员用户管理
+    BusiUserViewSet,               # 管理员用户管理
 )
 
 # ==================== DRF Router：自动生成 ViewSet 的 CRUD 路由 ====================
 router = DefaultRouter()
 
-# 注册 UserViewSet，basename 是路由名的基础前缀
+# 注册 BusiUserViewSet，basename 是路由名的基础前缀
 # 注册后自动生成 5 条路由：
-#   GET    /users/         → UserViewSet.list()         （用户列表）
-#   POST   /users/         → UserViewSet.create()       （创建用户）
-#   GET    /users/{id}/    → UserViewSet.retrieve()     （用户详情）
-#   PUT    /users/{id}/    → UserViewSet.update()       （修改用户）
-#   DELETE /users/{id}/    → UserViewSet.destroy()      （删除用户）
-router.register(r'users', UserViewSet, basename='user-manage')
+#   GET    /users/         → BusiUserViewSet.list()         （用户列表）
+#   POST   /users/         → BusiUserViewSet.create()       （创建用户）
+#   GET    /users/{id}/    → BusiUserViewSet.retrieve()     （用户详情）
+#   PUT    /users/{id}/    → BusiUserViewSet.update()       （修改用户）
+#   DELETE /users/{id}/    → BusiUserViewSet.destroy()      （删除用户）
+router.register(r'users', BusiUserViewSet, basename='user-manage')
 
 # ==================== urlpatterns：URL 模式列表 ====================
 urlpatterns = [

@@ -11,32 +11,32 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.exams.models import ExamSession, StudentAnswer, ExamSubmission
+from apps.exams.models import BusiExamSession, BusiStudentAnswer, BusiExamSubmission
 from apps.exams.serializers import (
-    ExamSessionListSerializer,
-    ExamSessionDetailSerializer,
-    ExamSessionCreateSerializer,
-    AnswerSubmitSerializer,
-    StudentAnswerSerializer,
-    ExamSubmissionSerializer,
+    BusiExamSessionListSerializer,
+    BusiExamSessionDetailSerializer,
+    BusiExamSessionCreateSerializer,
+    BusiAnswerSubmitSerializer,
+    BusiStudentAnswerSerializer,
+    BusiExamSubmissionSerializer,
 )
 from apps.exams.scoring import auto_grade_question, grade_exam_submission
-from apps.papers.models import PaperQuestion
+from apps.papers.models import BusiPaperQuestion
 from utils.permissions import IsTeacher, IsAdmin
 from utils.response import APIResponse
 
 
-class ExamSessionViewSet(viewsets.ModelViewSet):
+class BusiExamSessionViewSet(viewsets.ModelViewSet):
     """考试场次管理 ViewSet"""
-    queryset = ExamSession.objects.filter(is_deleted=False).select_related('paper')
+    queryset = BusiExamSession.objects.filter(is_deleted=False).select_related('paper')
     permission_classes = [IsTeacher]
 
     def get_serializer_class(self):
         if self.action == 'create':
-            return ExamSessionCreateSerializer
+            return BusiExamSessionCreateSerializer
         if self.action in ('list',):
-            return ExamSessionListSerializer
-        return ExamSessionDetailSerializer
+            return BusiExamSessionListSerializer
+        return BusiExamSessionDetailSerializer
 
     def get_permissions(self):
         """学生也可以查看可用考试列表"""
@@ -67,16 +67,16 @@ class ExamSessionViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
-        serializer = ExamSessionDetailSerializer(instance, context={'request': request})
+        serializer = BusiExamSessionDetailSerializer(instance, context={'request': request})
         return APIResponse.success(data=serializer.data)
 
     def create(self, request, *args, **kwargs):
-        serializer = ExamSessionCreateSerializer(data=request.data, context={'request': request})
+        serializer = BusiExamSessionCreateSerializer(data=request.data, context={'request': request})
         if not serializer.is_valid():
             return APIResponse.error(code=400, message=self._first_error(serializer.errors))
         exam = serializer.save()
         return APIResponse.created(
-            data=ExamSessionListSerializer(exam).data,
+            data=BusiExamSessionListSerializer(exam).data,
             message='考试发布成功',
         )
 
@@ -98,7 +98,7 @@ class ExamSessionViewSet(viewsets.ModelViewSet):
             return APIResponse.error(code=400, message='考试已结束')
 
         # 检查是否已提交
-        submission, created = ExamSubmission.objects.get_or_create(
+        submission, created = BusiExamSubmission.objects.get_or_create(
             exam_session=exam,
             student=request.user,
             defaults={'status': 'in_progress', 'start_time': now},
@@ -111,7 +111,7 @@ class ExamSessionViewSet(viewsets.ModelViewSet):
             # 首次进入：初始化答题记录
             paper_questions = exam.paper.paper_questions.all()
             for pq in paper_questions:
-                StudentAnswer.objects.get_or_create(
+                BusiStudentAnswer.objects.get_or_create(
                     exam_session=exam,
                     student=request.user,
                     paper_question=pq,
@@ -129,14 +129,14 @@ class ExamSessionViewSet(viewsets.ModelViewSet):
             'start_time': exam.start_time,
             'end_time': exam.end_time,
             'submission_start_time': submission.start_time,
-            'questions': [],
+            'busi_questions': [],
         }
 
         for pq in exam.paper.paper_questions.all().select_related('question'):
-            answer = StudentAnswer.objects.filter(
+            answer = BusiStudentAnswer.objects.filter(
                 exam_session=exam, student=request.user, paper_question=pq,
             ).first()
-            paper_data['questions'].append({
+            paper_data['busi_questions'].append({
                 'paper_question_id': pq.id,
                 'order': pq.order,
                 'score': pq.score,
@@ -165,12 +165,12 @@ class ExamSessionViewSet(viewsets.ModelViewSet):
             return APIResponse.error(code=400, message='缺少题目 ID')
 
         try:
-            answer = StudentAnswer.objects.get(
+            answer = BusiStudentAnswer.objects.get(
                 exam_session=exam,
                 student=request.user,
                 paper_question_id=paper_question_id,
             )
-        except StudentAnswer.DoesNotExist:
+        except BusiStudentAnswer.DoesNotExist:
             return APIResponse.error(code=404, message='无效的题目')
 
         answer.answer = answer_data
@@ -193,11 +193,11 @@ class ExamSessionViewSet(viewsets.ModelViewSet):
 
         # 获取提交记录
         try:
-            submission = ExamSubmission.objects.get(
+            submission = BusiExamSubmission.objects.get(
                 exam_session=exam,
                 student=request.user,
             )
-        except ExamSubmission.DoesNotExist:
+        except BusiExamSubmission.DoesNotExist:
             return APIResponse.error(code=400, message='请先开始考试')
 
         if submission.status == 'submitted':
@@ -205,7 +205,7 @@ class ExamSessionViewSet(viewsets.ModelViewSet):
 
         # 批量更新答案状态
         with transaction.atomic():
-            StudentAnswer.objects.filter(
+            BusiStudentAnswer.objects.filter(
                 exam_session=exam,
                 student=request.user,
             ).update(status='submitted')
@@ -236,27 +236,27 @@ class ExamSessionViewSet(viewsets.ModelViewSet):
                 models.Q(students__isnull=True) | models.Q(students=request.user)
             ).distinct()
 
-        serializer = ExamSessionListSerializer(qs, many=True)
+        serializer = BusiExamSessionListSerializer(qs, many=True)
         return APIResponse.success(data=serializer.data)
 
     @action(methods=['get'], detail=True, url_path='my-result')
     def my_result(self, request, pk=None):
         """学生查看某场考试的成绩"""
         exam = self.get_object()
-        submission = ExamSubmission.objects.filter(
+        submission = BusiExamSubmission.objects.filter(
             exam_session=exam, student=request.user,
         ).first()
 
         if not submission or submission.status not in ('submitted', 'auto_submitted'):
             return APIResponse.error(code=400, message='尚未提交考试')
 
-        answers = StudentAnswer.objects.filter(
+        answers = BusiStudentAnswer.objects.filter(
             exam_session=exam, student=request.user,
         ).select_related('paper_question__question').order_by('paper_question__order')
 
-        serializer = StudentAnswerSerializer(answers, many=True)
+        serializer = BusiStudentAnswerSerializer(answers, many=True)
         return APIResponse.success(data={
-            'submission': ExamSubmissionSerializer(submission).data,
+            'submission': BusiExamSubmissionSerializer(submission).data,
             'answers': serializer.data,
         })
 

@@ -2,10 +2,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from apps.exams.views import ExamSessionViewSet
+from apps.exams.views import BusiExamSessionViewSet
 
 router = DefaultRouter()
-router.register(r'exams', ExamSessionViewSet, basename='exam')
+router.register(r'exams', BusiExamSessionViewSet, basename='exam')
 
 urlpatterns = [
     path('', include(router.urls)),

@@ -2,19 +2,19 @@
 from django.urls import path
 
 from apps.reports.views import (
-    ExamStatisticsView,
-    StudentScoresView,
-    ExamResultDetailView,
-    ExportScoresView,
+    BusiExamStatisticsView,
+    BusiStudentScoresView,
+    BusiExamResultDetailView,
+    BusiExportScoresView,
 )
 
 urlpatterns = [
     # 考试统计
-    path('reports/exam/<int:exam_id>/statistics/', ExamStatisticsView.as_view(), name='exam-statistics'),
+    path('reports/exam/<int:exam_id>/statistics/', BusiExamStatisticsView.as_view(), name='exam-statistics'),
     # 导出成绩
-    path('reports/exam/<int:exam_id>/export/', ExportScoresView.as_view(), name='exam-export'),
+    path('reports/exam/<int:exam_id>/export/', BusiExportScoresView.as_view(), name='exam-export'),
     # 学生成绩列表
-    path('reports/student-scores/', StudentScoresView.as_view(), name='student-scores'),
+    path('reports/student-scores/', BusiStudentScoresView.as_view(), name='student-scores'),
     # 学生某次考试的详细答题结果
-    path('reports/result/<int:submission_id>/', ExamResultDetailView.as_view(), name='exam-result-detail'),
+    path('reports/result/<int:submission_id>/', BusiExamResultDetailView.as_view(), name='exam-result-detail'),
 ]
