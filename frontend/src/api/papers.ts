@@ -27,3 +27,16 @@ export function removeQuestionFromPaperApi(paperId: number, questionId: number) 
 export function updatePaperQuestionsApi(paperId: number, data: any) {
   return request.post(`/papers/${paperId}/update-questions/`, data)
 }
+
+/** 获取/保存随机抽题规则 */
+export function getRandomRulesApi(paperId: number) {
+  return request.get(`/papers/${paperId}/random-rules/`)
+}
+export function saveRandomRulesApi(paperId: number, data: any) {
+  return request.post(`/papers/${paperId}/random-rules/`, data)
+}
+
+/** 随机抽题 */
+export function randomDrawApi(paperId: number, data: any) {
+  return request.post(`/papers/${paperId}/random-draw/`, data)
+}

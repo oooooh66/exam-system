@@ -62,6 +62,34 @@
 
       <el-empty v-if="!selectedQuestions.length" description="暂无题目，请从下方题库中添加" />
 
+      <!-- 随机抽题配置 -->
+      <el-divider />
+      <h3 style="margin-bottom:12px">随机抽题规则</h3>
+      <div style="margin-bottom:16px">
+        <div v-for="(rule, idx) in randomRules" :key="idx" style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+          <el-select v-model="rule.category_id" placeholder="选择分类" style="width:200px" clearable>
+            <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
+          </el-select>
+          <span>抽取</span>
+          <el-input-number v-model="rule.question_count" :min="1" :max="99" size="small" />
+          <span>题</span>
+          <el-button size="small" type="danger" @click="randomRules.splice(idx, 1)">删除</el-button>
+        </div>
+        <el-button size="small" @click="randomRules.push({ category_id: null, question_count: 5 })">
+          + 添加规则
+        </el-button>
+        <el-button
+          v-if="randomRules.length"
+          type="warning"
+          size="small"
+          :loading="drawing"
+          style="margin-left:10px"
+          @click="doRandomDraw"
+        >
+          随机抽题
+        </el-button>
+      </div>
+
       <!-- 选题区域 -->
       <el-divider />
       <h3 style="margin-bottom:12px">从题库选题</h3>
@@ -166,7 +194,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getQuestionsApi, getCategoriesApi } from '@/api/questions'
-import { createPaperApi, updatePaperApi, getPaperDetailApi } from '@/api/papers'
+import { createPaperApi, updatePaperApi, getPaperDetailApi, randomDrawApi } from '@/api/papers'
 
 const route = useRoute()
 const router = useRouter()
@@ -195,6 +223,8 @@ const selectedQuestions = ref<any[]>([])
 const availableQuestions = ref<any[]>([])
 const selectedRows = ref<any[]>([])
 const totalScore = ref(0)
+const randomRules = ref<{ category_id: number | null; question_count: number }[]>([])
+const drawing = ref(false)
 
 /** 检查题目是否已在试卷列表中 */
 function isAdded(id: number): boolean {
@@ -264,6 +294,55 @@ function updateTotal() {
     (sum: number, q: any) => sum + (Number(q.score) || 0),
     0
   )
+}
+
+/** 执行随机抽题 */
+async function doRandomDraw() {
+  const validRules = randomRules.value.filter(r => r.category_id && r.question_count > 0)
+  if (!validRules.length) { ElMessage.warning('请至少配置一条有效规则'); return }
+
+  drawing.value = true
+  try {
+    const paperId = Number(route.params.id)
+    if (paperId) {
+      // 编辑已有试卷：直接调用该试卷的随机抽题接口
+      const res = await randomDrawApi(paperId, {
+        rules: validRules.map(r => ({ category_id: r.category_id, question_count: r.question_count })),
+      })
+      const data = res.data.data
+      const pqList = data.paper?.paper_questions || data.paper?.busi_paper_questions || []
+      selectedQuestions.value = pqList.map((pq: any) => ({
+        question_id: pq.question || pq.question_id,
+        question: pq.question || pq.question_id,
+        question_detail: pq.question_detail,
+        score: Number(pq.score) || 5,
+        order: pq.order,
+      }))
+      ElMessage.success(data.message || `抽取了 ${data.added} 题`)
+    } else {
+      // 新建试卷：本地模拟抽题（调后端随机接口，但试卷未保存所以先本地处理）
+      await loadQuestions()
+      const rules = validRules.map(r => ({ category_id: r.category_id, question_count: r.question_count }))
+      // 本地随机选择
+      for (const rule of rules) {
+        const pool = availableQuestions.value.filter(
+          (q: any) => q.category === rule.category_id && !isAdded(q.id)
+        )
+        const picked = pool.sort(() => Math.random() - 0.5).slice(0, rule.question_count)
+        for (const q of picked) {
+          selectedQuestions.value.push({
+            question_id: q.id, question: q.id,
+            question_detail: q, score: Number(q.default_score) || 5,
+            order: selectedQuestions.value.length,
+          })
+        }
+      }
+      ElMessage.success(`随机抽取了题目`)
+    }
+    updateTotal()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '随机抽题失败')
+  } finally { drawing.value = false }
 }
 
 /** 加载可选题库 */

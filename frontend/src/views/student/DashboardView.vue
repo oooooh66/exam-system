@@ -5,12 +5,14 @@
       <el-col :span="8">
         <el-card shadow="hover">
           <template #header>快捷操作</template>
-          <el-button type="primary" style="width:100%;margin-bottom:12px" @click="$router.push('/student/exams')">
+          <div class="dash-actions">
+            <el-button type="primary" @click="$router.push('/student/exams')">
             查看我的考试
           </el-button>
-          <el-button type="success" style="width:100%" @click="$router.push('/student/scores')">
+          <el-button type="success" @click="$router.push('/student/scores')">
             查看我的成绩
           </el-button>
+          </div>
         </el-card>
       </el-col>
       <el-col :span="16">

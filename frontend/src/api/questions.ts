@@ -38,3 +38,9 @@ export function importQuestionsApi(formData: FormData) {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
+
+// ========== 机构 ==========
+/** 获取所有不重复的机构列表 */
+export function getOrgsApi() {
+  return request.get('/questions/orgs/')
+}

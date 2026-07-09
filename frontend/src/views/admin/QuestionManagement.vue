@@ -54,6 +54,11 @@
             <el-option label="困难" value="hard" />
           </el-select>
         </el-form-item>
+        <el-form-item label="机构">
+          <el-select v-model="filters.org_id" clearable placeholder="全部" style="width:160px" @change="loadQuestions">
+            <el-option v-for="org in orgList" :key="org.org_id" :label="org.org_nm" :value="org.org_id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="搜索">
           <el-input v-model="filters.search" placeholder="搜索题干" clearable style="width:200px" @clear="loadQuestions" @keyup.enter="loadQuestions" />
         </el-form-item>
@@ -72,6 +77,7 @@
         <el-table-column label="难度" width="80">
           <template #default="{ row }">{{ row.difficulty_display }}</template>
         </el-table-column>
+        <el-table-column label="机构" width="100" prop="org_nm" />
         <el-table-column label="分值" width="60" prop="default_score" />
         <el-table-column label="操作" width="140">
           <template #default="{ row }">
@@ -108,6 +114,12 @@
           <el-select v-model="form.category" clearable filterable allow-create placeholder="选择或输入分类">
             <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="机构号">
+          <el-input v-model="form.org_id" placeholder="机构编码" />
+        </el-form-item>
+        <el-form-item label="机构名">
+          <el-input v-model="form.org_nm" placeholder="机构名称" />
         </el-form-item>
         <el-form-item label="难度">
           <el-radio-group v-model="form.difficulty">
@@ -192,12 +204,13 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getQuestionsApi, createQuestionApi, updateQuestionApi, deleteQuestionApi, importQuestionsApi, getCategoriesApi, createCategoryApi, updateCategoryApi, deleteCategoryApi } from '@/api/questions'
+import { getQuestionsApi, createQuestionApi, updateQuestionApi, deleteQuestionApi, importQuestionsApi, getCategoriesApi, createCategoryApi, updateCategoryApi, deleteCategoryApi, getOrgsApi } from '@/api/questions'
 
 const loading = ref(false)
 const saving = ref(false)
 const questions = ref<any[]>([])
 const categories = ref<any[]>([])
+const orgList = ref<any[]>([])
 const total = ref(0)
 const page = ref(1)
 const editing = ref(false)
@@ -209,9 +222,10 @@ const categoryDialogVisible = ref(false)
 const categoryEditing = ref<any>(null)
 const categoryForm = reactive({ name: '' })
 
-const filters = reactive<{ question_type: string[]; difficulty: string[]; search: string }>({
+const filters = reactive<{ question_type: string[]; difficulty: string[]; org_id: string; search: string }>({
   question_type: [],
   difficulty: [],
+  org_id: '',
   search: '',
 })
 
@@ -224,6 +238,8 @@ const form = reactive<any>({
   category: null,
   difficulty: 'easy',
   default_score: 5,
+  org_id: '',
+  org_nm: '',
 })
 
 const rules = {
@@ -249,6 +265,7 @@ async function loadQuestions() {
     const params: any = { page: page.value }
     if (filters.question_type.length) params.question_type = filters.question_type.join(',')
     if (filters.difficulty.length) params.difficulty = filters.difficulty.join(',')
+    if (filters.org_id) params.org_id = filters.org_id
     if (filters.search) params.search = filters.search
     const res = await getQuestionsApi(params)
     questions.value = res.data.data?.results || []
@@ -271,7 +288,7 @@ function openDialog(row?: any) {
       correct_answer: row.correct_answer,
       analysis: row.analysis || '',
       category: row.category,
-      difficulty: row.difficulty,
+      difficulty: row.difficulty, org_id: row.org_id || '', org_nm: row.org_nm || '',
       default_score: row.default_score,
     })
     if (!form.options.length) form.options = ['', '', '', '']
@@ -368,7 +385,11 @@ async function deleteCategory(row: any) {
   loadCategories()
 }
 
-onMounted(() => { loadQuestions(); loadCategories() })
+async function loadOrgs() {
+  try { const res = await getOrgsApi(); orgList.value = res.data.data || [] } catch { /* ignore */ }
+}
+
+onMounted(() => { loadQuestions(); loadCategories(); loadOrgs() })
 </script>
 
 <style scoped>
