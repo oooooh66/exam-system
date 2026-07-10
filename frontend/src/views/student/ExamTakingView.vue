@@ -25,7 +25,7 @@
           v-for="(q, idx) in questions"
           :key="idx"
           class="nav-item"
-          :class="{ active: currentIdx === idx, answered: q.answer !== null && q.answer !== '' }"
+          :class="{ active: currentIdx === idx, answered: isAnswered(q) }"
           @click="goToQuestion(idx)"
         >
           {{ idx + 1 }}
@@ -144,7 +144,9 @@ let timerInterval: ReturnType<typeof setInterval> | null = null
 
 const totalCount = computed(() => questions.value.length)
 const currentQuestion = computed(() => questions.value[currentIdx.value] || null)
-const answeredCount = computed(() => questions.value.filter((q: any) => q.answer !== null && q.answer !== '').length)
+const answeredCount = computed(() =>
+  questions.value.filter((q: any) => isAnswered(q)).length
+)
 const unansweredCount = computed(() => totalCount.value - answeredCount.value)
 
 const formattedTime = computed(() => {
@@ -153,6 +155,13 @@ const formattedTime = computed(() => {
   const s = timer.value % 60
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 })
+
+function isAnswered(q: any): boolean {
+  const a = q.answer
+  if (a === null || a === undefined || a === '') return false
+  if (Array.isArray(a)) return a.length > 0
+  return true
+}
 
 function goToQuestion(idx: number) {
   autoSave()
@@ -185,6 +194,13 @@ async function autoSave() {
     })
   } catch {
     // 静默失败，下次再保存
+  }
+
+  // 单选和判断题：作答后自动跳到下一题
+  const qt = currentQuestion.value.question_type
+  if ((qt === 'single_choice' || qt === 'true_false') && currentIdx.value < totalCount.value - 1) {
+    currentIdx.value++
+    loadAnswer()
   }
 }
 
@@ -298,8 +314,8 @@ onBeforeUnmount(() => {
   cursor: pointer;
   font-size: 14px;
 }
-.nav-item.active { border-color: #409eff; background: #ecf5ff; color: #409eff; }
-.nav-item.answered { background: #f0f9eb; border-color: #67c23a; }
+.nav-item.active { border-color: #409eff; background: #ecf5ff; color: #409eff; font-weight: bold; }
+.nav-item.answered { background: #409eff; border-color: #409eff; color: #fff; }
 .question-area { margin-top: 16px; }
 .question-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .question-number { font-weight: bold; font-size: 16px; }
