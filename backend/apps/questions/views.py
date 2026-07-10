@@ -218,6 +218,69 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
     @action(
         methods=['post'],
         detail=False,
+        url_path='random-draw',
+    )
+    def random_draw(self, request):
+        """
+        独立随机抽题（不绑定试卷，返回题目列表）
+
+        POST /api/questions/random-draw/
+        Body: {"rules": [{"category_id": 1, "counts": {"single_choice": 3, ...}}]}
+        """
+        from apps.papers.serializers import BusiPaperRandomDrawSerializer
+
+        serializer = BusiPaperRandomDrawSerializer(data=request.data)
+        if not serializer.is_valid():
+            return APIResponse.error(code=400, message=self._first_error(serializer.errors))
+
+        rules = serializer.validated_data['rules']
+        import random
+        added = 0
+        skipped = 0
+        picked_ids = set()
+        all_questions = []
+
+        for rule in rules:
+            category_id = rule['category_id']
+            counts = rule.get('counts', {})
+
+            for qtype, need in counts.items():
+                if need <= 0:
+                    continue
+
+                pool = list(BusiQuestion.objects.filter(
+                    category_id=category_id,
+                    question_type=qtype,
+                    is_deleted=False,
+                ).exclude(id__in=picked_ids).values_list('id', flat=True))
+
+                random.shuffle(pool)
+                batch = []
+                for qid in pool:
+                    if len(batch) >= need:
+                        break
+                    if qid not in picked_ids:
+                        batch.append(qid)
+                        picked_ids.add(qid)
+
+                if len(batch) < need:
+                    skipped += need - len(batch)
+                added += len(batch)
+                all_questions.extend(batch)
+
+        questions = list(
+            BusiQuestion.objects.filter(id__in=all_questions).select_related('category')
+            .order_by('question_type', 'id')
+        )
+        return APIResponse.success(data={
+            'added': added,
+            'skipped': skipped,
+            'questions': BusiQuestionListSerializer(questions, many=True).data,
+        })
+
+    @action(
+        methods=['post'],
+        detail=False,
         url_path='import',
         parser_classes=[MultiPartParser],
         permission_classes=[IsTeacher],

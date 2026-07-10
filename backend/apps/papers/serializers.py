@@ -167,19 +167,29 @@ class BusiPaperRandomDrawSerializer(serializers.Serializer):
     """
     随机抽题请求序列化器
 
-    前端传入一组规则，后端按规则随机选取题目并添加到试卷中。
+    前端传入规则列表，每条规则包含 category_id 和各题型抽取数量。
+    格式: {"rules": [{"category_id": 1, "counts": {"single_choice": 3, "multiple_choice": 2, ...}}]}
     """
+    QUESTION_TYPES = ['single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer']
+
     rules = serializers.ListField(
-        child=serializers.DictField(
-            child=serializers.IntegerField(min_value=1),
-        ),
-        help_text='规则列表 [{"category_id": 1, "question_count": 5}, ...]',
+        child=serializers.DictField(),
+        help_text='规则列表 [{"category_id": 1, "counts": {"single_choice": 3, ...}}, ...]',
     )
 
     def validate_rules(self, value):
         if not value:
             raise serializers.ValidationError('抽题规则不能为空')
         for rule in value:
-            if 'category_id' not in rule or 'question_count' not in rule:
-                raise serializers.ValidationError('每条规则必须包含 category_id 和 question_count')
+            if 'category_id' not in rule:
+                raise serializers.ValidationError('每条规则必须包含 category_id')
+            counts = rule.get('counts', {})
+            if not counts:
+                raise serializers.ValidationError('每条规则必须包含 counts')
+            # 每个题型数量 >= 0
+            for qt in self.QUESTION_TYPES:
+                if qt not in counts:
+                    rule.setdefault('counts', {})[qt] = 0
+                if counts[qt] < 0:
+                    raise serializers.ValidationError(f'题型 {qt} 数量不能为负')
         return value

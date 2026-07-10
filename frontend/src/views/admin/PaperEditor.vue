@@ -66,27 +66,36 @@
       <el-divider />
       <h3 style="margin-bottom:12px">随机抽题规则</h3>
       <div style="margin-bottom:16px">
-        <div v-for="(rule, idx) in randomRules" :key="idx" style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
-          <el-select v-model="rule.category_id" placeholder="选择分类" style="width:200px" clearable>
-            <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
-          </el-select>
-          <span>抽取</span>
-          <el-input-number v-model="rule.question_count" :min="1" :max="99" size="small" />
-          <span>题</span>
-          <el-button size="small" type="danger" @click="randomRules.splice(idx, 1)">删除</el-button>
+        <div v-for="(rule, idx) in randomRules" :key="idx" style="border:1px solid #ddd;border-radius:6px;padding:10px;margin-bottom:10px;background:#fafafa">
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+            <el-select v-model="rule.category_id" placeholder="选择分类" style="width:160px" clearable>
+              <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
+            </el-select>
+            <span style="font-size:13px">总抽题数</span>
+            <el-input-number v-model="rule.total" :min="0" :max="99" size="small" style="width:80px" controls-position="right" />
+            <el-tag :type="typeTotal(rule) === rule.total ? 'success' : 'danger'" size="small">
+              {{ typeTotal(rule) === rule.total ? `= ${rule.total} 题` : `${typeTotal(rule)}≠${rule.total}` }}
+            </el-tag>
+            <el-button
+              size="small"
+              type="primary"
+              :loading="rule.drawing"
+              :disabled="!rule.category_id || typeTotal(rule) !== rule.total || rule.total === 0"
+              @click="doRuleDraw(idx)"
+            >
+              {{ rule.drawn ? '刷新抽题' : '随机抽题' }}
+            </el-button>
+            <el-button size="small" type="danger" @click="removeRule(idx)">删除</el-button>
+          </div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <span v-for="t in questionTypes" :key="t.value" style="display:flex;align-items:center;gap:4px;font-size:13px">
+              {{ t.label }}
+              <el-input-number v-model="rule.counts[t.value]" :min="0" :max="99" size="small" style="width:70px" controls-position="right" />
+            </span>
+          </div>
         </div>
-        <el-button size="small" @click="randomRules.push({ category_id: null, question_count: 5 })">
+        <el-button size="small" @click="randomRules.push({ category_id: null, total: 0, drawn: false, drawing: false, counts: { single_choice: 0, multiple_choice: 0, true_false: 0, fill_blank: 0, short_answer: 0 }, questions: [] })">
           + 添加规则
-        </el-button>
-        <el-button
-          v-if="randomRules.length"
-          type="warning"
-          size="small"
-          :loading="drawing"
-          style="margin-left:10px"
-          @click="doRandomDraw"
-        >
-          随机抽题
         </el-button>
       </div>
 
@@ -132,11 +141,29 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="机构">
+          <el-select
+            v-model="filterOrg"
+            clearable
+            filterable
+            placeholder="全部"
+            style="width: 180px"
+            @change="loadQuestions"
+          >
+            <el-option
+              v-for="org in orgList"
+              :key="org.org_id"
+              :label="`${org.org_id} ${org.org_nm}`"
+              :value="org.org_id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="搜索">
           <el-input v-model="searchText" placeholder="搜索题干" clearable style="width:180px" @keyup.enter="loadQuestions" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="loadQuestions">搜索</el-button>
+          <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>
 
@@ -182,7 +209,7 @@
 
       <div style="margin-top:24px;text-align:center">
         <el-button type="primary" size="large" :loading="saving" @click="handleSave">
-          {{ isEdit ? '保存修改' : '创建试卷' }}
+          {{ route.name === 'PaperCreate' ? '创建试卷' : '保存修改' }}
         </el-button>
       </div>
     </el-card>
@@ -193,8 +220,8 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getQuestionsApi, getCategoriesApi } from '@/api/questions'
-import { createPaperApi, updatePaperApi, getPaperDetailApi, randomDrawApi } from '@/api/papers'
+import { getQuestionsApi, getCategoriesApi, getOrgsApi, randomPickApi } from '@/api/questions'
+import { createPaperApi, updatePaperApi, getPaperDetailApi } from '@/api/papers'
 
 const route = useRoute()
 const router = useRouter()
@@ -206,8 +233,10 @@ const qPage = ref(1)
 const qTotal = ref(0)
 const filterType = ref<string[]>([])
 const filterCategory = ref<number[]>([])
+const filterOrg = ref('')
 const searchText = ref('')
 const categories = ref<any[]>([])
+const orgList = ref<any[]>([])
 
 // 表格 ref
 const questionTable = ref()
@@ -223,8 +252,35 @@ const selectedQuestions = ref<any[]>([])
 const availableQuestions = ref<any[]>([])
 const selectedRows = ref<any[]>([])
 const totalScore = ref(0)
-const randomRules = ref<{ category_id: number | null; question_count: number }[]>([])
+const questionTypes = [
+  { value: 'single_choice', label: '单选' },
+  { value: 'multiple_choice', label: '多选' },
+  { value: 'true_false', label: '判断' },
+  { value: 'fill_blank', label: '填空' },
+  { value: 'short_answer', label: '简答' },
+]
+const randomRules = ref<{
+  category_id: number | null
+  total: number
+  counts: Record<string, number>
+  drawn: boolean
+  drawing: boolean
+  questions: any[]
+}[]>([])
 const drawing = ref(false)
+
+function typeTotal(rule: any): number {
+  return Object.values(rule.counts || {}).reduce((s: number, v: any) => s + (v || 0), 0)
+}
+
+function removeRule(idx: number) {
+  // 从 selectedQuestions 中移除该规则的题目
+  const qids = new Set(randomRules.value[idx].questions.map((q: any) => q.id))
+  selectedQuestions.value = selectedQuestions.value.filter(
+    (q: any) => !qids.has(q.question_detail?.id ?? q.question_id)
+  )
+  randomRules.value.splice(idx, 1)
+}
 
 /** 检查题目是否已在试卷列表中 */
 function isAdded(id: number): boolean {
@@ -296,75 +352,76 @@ function updateTotal() {
   )
 }
 
-/** 执行随机抽题 */
-async function doRandomDraw() {
-  const validRules = randomRules.value.filter(r => r.category_id && r.question_count > 0)
-  if (!validRules.length) { ElMessage.warning('请至少配置一条有效规则'); return }
+/** 执行单条规则的随机抽题 */
+async function doRuleDraw(idx: number) {
+  const rule = randomRules.value[idx]
+  if (!rule.category_id || typeTotal(rule) !== rule.total || rule.total === 0) return
 
-  drawing.value = true
+  rule.drawing = true
   try {
-    const paperId = Number(route.params.id)
-    if (paperId) {
-      // 编辑已有试卷：直接调用该试卷的随机抽题接口
-      const res = await randomDrawApi(paperId, {
-        rules: validRules.map(r => ({ category_id: r.category_id, question_count: r.question_count })),
-      })
-      const data = res.data.data
-      const pqList = data.paper?.paper_questions || data.paper?.busi_paper_questions || []
-      selectedQuestions.value = pqList.map((pq: any) => ({
-        question_id: pq.question || pq.question_id,
-        question: pq.question || pq.question_id,
-        question_detail: pq.question_detail,
-        score: Number(pq.score) || 5,
-        order: pq.order,
-      }))
-      ElMessage.success(data.message || `抽取了 ${data.added} 题`)
-    } else {
-      // 新建试卷：本地模拟抽题（调后端随机接口，但试卷未保存所以先本地处理）
-      await loadQuestions()
-      const rules = validRules.map(r => ({ category_id: r.category_id, question_count: r.question_count }))
-      // 本地随机选择
-      for (const rule of rules) {
-        const pool = availableQuestions.value.filter(
-          (q: any) => q.category === rule.category_id && !isAdded(q.id)
-        )
-        const picked = pool.sort(() => Math.random() - 0.5).slice(0, rule.question_count)
-        for (const q of picked) {
-          selectedQuestions.value.push({
-            question_id: q.id, question: q.id,
-            question_detail: q, score: Number(q.default_score) || 5,
-            order: selectedQuestions.value.length,
-          })
-        }
-      }
-      ElMessage.success(`随机抽取了题目`)
+    const res = await randomPickApi({
+      rules: [{
+        category_id: rule.category_id,
+        counts: rule.counts,
+      }],
+    })
+
+    const data = res.data.data
+    const newQuestions = (data.questions || []).map((q: any) => ({
+      question_id: q.id,
+      question: q.id,
+      question_detail: q,
+      score: Number(q.default_score) || 5,
+      order: 0,
+    }))
+
+    // 刷新模式：先移除旧题目，再添加新题目
+    if (rule.drawn && rule.questions.length) {
+      const oldIds = new Set(rule.questions.map((q: any) => q.question_detail?.id ?? q.question_id))
+      selectedQuestions.value = selectedQuestions.value.filter(
+        (q: any) => !oldIds.has(q.question_detail?.id ?? q.question_id)
+      )
     }
-    // 去重：确保没有重复题目
-    deduplicateQuestions()
+
+    // 添加新题目（追加到末尾）
+    const startIdx = selectedQuestions.value.length
+    newQuestions.forEach((q: any, i: number) => { q.order = startIdx + i })
+    selectedQuestions.value.push(...newQuestions)
+
+    rule.questions = newQuestions
+    rule.drawn = true
+    reorderByType()
     updateTotal()
+    ElMessage.success(data.skipped > 0
+      ? `抽取 ${data.added} 题，${data.skipped} 题因题库不足跳过`
+      : `成功抽取 ${data.added} 题`)
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.message || '随机抽题失败')
-  } finally { drawing.value = false }
+  } finally {
+    rule.drawing = false
+  }
 }
 
-/** 去重 */
-function deduplicateQuestions() {
-  const seen = new Set<number>()
-  selectedQuestions.value = selectedQuestions.value.filter(q => {
-    const id = q.question_detail?.id ?? q.question_id ?? q.question
-    if (seen.has(id)) return false
-    seen.add(id)
-    return true
+/** 按题目类型排序 */
+function reorderByType() {
+  const order = ['single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer']
+  selectedQuestions.value.sort((a: any, b: any) => {
+    const ta = a.question_detail?.question_type ?? ''
+    const tb = b.question_detail?.question_type ?? ''
+    return order.indexOf(ta) - order.indexOf(tb)
   })
+  selectedQuestions.value.forEach((q: any, i: number) => { q.order = i })
 }
 
 /** 加载可选题库 */
-async function loadQuestions() {
+async function loadQuestions(page?: number) {
   qLoading.value = true
+  if (page) qPage.value = page
   try {
     const params: any = { page: qPage.value }
     if (filterType.value.length) params.question_type = filterType.value.join(',')
     if (filterCategory.value.length) params.category = filterCategory.value.join(',')
+    if (filterOrg.value) params.org_id = filterOrg.value
     if (searchText.value) params.search = searchText.value
     const res = await getQuestionsApi(params)
     availableQuestions.value = res.data.data?.results || []
@@ -378,6 +435,24 @@ async function loadCategories() {
     const res = await getCategoriesApi()
     categories.value = res.data.data?.results || []
   } catch { /* ignore */ }
+}
+
+/** 加载机构列表 */
+async function loadOrgs() {
+  try {
+    const res = await getOrgsApi()
+    orgList.value = res.data.data || []
+  } catch { /* ignore */ }
+}
+
+/** 重置筛选条件 */
+function resetFilters() {
+  filterType.value = []
+  filterCategory.value = []
+  filterOrg.value = ''
+  searchText.value = ''
+  qPage.value = 1
+  loadQuestions()
 }
 
 /** 加载试卷详情（编辑模式） */
@@ -417,12 +492,13 @@ async function handleSave() {
         order: idx,
       })),
     }
-    if (isEdit.value) {
-      await updatePaperApi(Number(route.params.id), payload)
-      ElMessage.success('修改成功')
-    } else {
+    const isCreate = route.name === 'PaperCreate'
+    if (isCreate) {
       await createPaperApi(payload)
       ElMessage.success('创建成功')
+    } else {
+      await updatePaperApi(Number(route.params.id), payload)
+      ElMessage.success('修改成功')
     }
     router.push('/admin/papers')
   } catch (err: any) {
@@ -432,6 +508,7 @@ async function handleSave() {
 
 onMounted(() => {
   loadCategories()
+  loadOrgs()
   loadQuestions()
   loadPaperDetail()
 })

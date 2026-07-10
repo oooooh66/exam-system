@@ -345,3 +345,18 @@ LOGGING = {
         },
     },
 }
+
+# ============================================
+# DRF 配置 — 分页确保列表接口返回 {results: [], count: N} 格式
+# ============================================
+REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': 'utils.pagination.SafePageNumberPagination',
+    'PAGE_SIZE': 20,
+    'MAX_PAGE_SIZE': 10000,
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_FILTER_BACKENDS': (
+        'django_filters.rest_framework.DjangoFilterBackend',
+    ),
+}

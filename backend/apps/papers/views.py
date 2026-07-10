@@ -174,10 +174,12 @@ class BusiPaperViewSet(viewsets.ModelViewSet):
     @action(methods=['post'], detail=True, url_path='random-draw')
     def random_draw(self, request, pk=None):
         """
-        按配置的随机规则抽取题目并添加到试卷
+        按分类+题型配置随机抽取题目并添加到试卷
 
-        从 random-rules 读取规则，从对应的分类中随机选取相应数量的题目，
-        自动排除试卷中已存在的题目，添加到试卷后重新计算总分。
+        请求格式:
+          {"rules": [{"category_id": 1, "counts": {"single_choice": 3, "multiple_choice": 2, "true_false": 0, "fill_blank": 0, "short_answer": 0}}]}
+
+        每种题型独立抽取，去重后若数量不足则循环补抽，直到达到指定数量或题库枯竭。
         """
         from apps.papers.serializers import BusiPaperRandomDrawSerializer
 
@@ -187,40 +189,68 @@ class BusiPaperViewSet(viewsets.ModelViewSet):
             return APIResponse.error(code=400, message=self._first_error(serializer.errors))
 
         rules = serializer.validated_data['rules']
-        added_count = 0
-        skipped_count = 0
+        added_total = 0
+        skipped_total = 0
+
+        # 当前试卷已有题目 ID 集合（动态更新，避免同一批次内重复）
+        picked_ids = set(paper.paper_questions.values_list('question_id', flat=True))
+        # 本批次新增的 question id 集合（用于防止同一规则内不同题型的重复）
+        batch_picked = set()
 
         for rule in rules:
             category_id = rule['category_id']
-            count = rule['question_count']
+            counts = rule.get('counts', {})
 
-            # 从该分类中随机取题，排除已在试卷中的
-            existing_ids = paper.paper_questions.values_list('question_id', flat=True)
-            candidates = BusiQuestion.objects.filter(
-                category_id=category_id, is_deleted=False,
-            ).exclude(id__in=existing_ids).order_by('?')[:count]
+            for qtype, need in counts.items():
+                if need <= 0:
+                    continue
 
-            for question in candidates:
-                BusiPaperQuestion.objects.create(
-                    paper=paper,
-                    question=question,
-                    score=question.default_score,
-                    order=paper.paper_questions.count(),
-                )
-                added_count += 1
+                # 从该分类该题型中随机取题，排除已选中的
+                pool_qs = BusiQuestion.objects.filter(
+                    category_id=category_id,
+                    question_type=qtype,
+                    is_deleted=False,
+                ).exclude(id__in=picked_ids).exclude(id__in=batch_picked)
 
-            if candidates.count() < count:
-                skipped_count += count - candidates.count()
+                pool_ids = list(pool_qs.values_list('id', flat=True))
+                import random
+                random.shuffle(pool_ids)
+
+                # 抽取 + 去重 + 补抽循环
+                to_add = []
+                cursor = 0
+                while len(to_add) < need and cursor < len(pool_ids):
+                    qid = pool_ids[cursor]
+                    cursor += 1
+                    if qid in batch_picked:
+                        continue
+                    to_add.append(qid)
+                    batch_picked.add(qid)
+
+                # 批量创建 PaperQuestion
+                if to_add:
+                    questions = list(BusiQuestion.objects.filter(id__in=to_add))
+                    for q in questions:
+                        BusiPaperQuestion.objects.create(
+                            paper=paper,
+                            question=q,
+                            score=q.default_score,
+                            order=paper.paper_questions.count(),
+                        )
+                        added_total += 1
+
+                if len(to_add) < need:
+                    skipped_total += need - len(to_add)
 
         paper.update_total_score()
         return APIResponse.success(
             data={
-                'added': added_count,
-                'skipped': skipped_count,
+                'added': added_total,
+                'skipped': skipped_total,
                 'total_score': paper.total_score,
                 'paper': BusiPaperDetailSerializer(paper).data,
             },
-            message=f'成功抽取 {added_count} 题' + (f'，{skipped_count} 题因数量不足跳过' if skipped_count > 0 else ''),
+            message=f'成功抽取 {added_total} 题' + (f'，{skipped_total} 题因题库不足跳过' if skipped_total > 0 else ''),
         )
 
     @action(methods=['post'], detail=True, url_path='save-random-rules')

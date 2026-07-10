@@ -44,3 +44,8 @@ export function importQuestionsApi(formData: FormData) {
 export function getOrgsApi() {
   return request.get('/questions/orgs/')
 }
+
+/** 独立随机抽题（不绑定试卷） */
+export function randomPickApi(data: any) {
+  return request.post('/questions/random-draw/', data)
+}
