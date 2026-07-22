@@ -14,21 +14,24 @@
       </div>
     </div>
 
-    <!-- 题目导航面板 -->
+    <!-- 答题卡 -->
     <el-card class="question-nav">
       <div class="nav-header">
         <span>答题卡</span>
         <span>总分: {{ examInfo?.total_score }} | 已答: {{ answeredCount }}/{{ totalCount }}</span>
       </div>
-      <div class="nav-grid">
-        <div
-          v-for="(q, idx) in questions"
-          :key="idx"
-          class="nav-item"
-          :class="{ active: currentIdx === idx, answered: isAnswered(q) }"
-          @click="goToQuestion(idx)"
-        >
-          {{ idx + 1 }}
+      <div v-for="group in questionGroups" :key="group.type" class="nav-group">
+        <div class="nav-group-label">{{ group.typeDisplay }}</div>
+        <div class="nav-grid">
+          <div
+            v-for="item in group.questions"
+            :key="item.globalIdx"
+            class="nav-item"
+            :class="{ active: currentIdx === item.globalIdx, answered: isAnswered(item.q) }"
+            @click="goToQuestion(item.globalIdx)"
+          >
+            {{ item.globalIdx + 1 }}
+          </div>
         </div>
       </div>
     </el-card>
@@ -37,7 +40,7 @@
     <el-card v-if="currentQuestion" class="question-area">
       <div class="question-header">
         <span class="question-number">第 {{ currentIdx + 1 }} 题</span>
-        <el-tag size="small">{{ currentQuestion.question_type_display }}</el-tag>
+        <el-tag size="small">{{ TYPE_LABEL[currentQuestion.question_type] || currentQuestion.question_type_display }}</el-tag>
         <span class="score">({{ currentQuestion.score }} 分)</span>
       </div>
 
@@ -56,7 +59,7 @@
           :value="String.fromCharCode(65 + optIdx)"
           class="option-item"
         >
-          {{ String.fromCharCode(65 + optIdx) + '. ' + opt }}
+          {{ opt }}
         </el-radio>
       </el-radio-group>
 
@@ -74,7 +77,7 @@
           :value="String.fromCharCode(65 + optIdx)"
           class="option-item"
         >
-          {{ String.fromCharCode(65 + optIdx) + '. ' + opt }}
+          {{ opt }}
         </el-checkbox>
       </el-checkbox-group>
 
@@ -141,9 +144,34 @@ const submitting = ref(false)
 const submitDialogVisible = ref(false)
 const timer = ref(0)
 let timerInterval: ReturnType<typeof setInterval> | null = null
+let autoSaveInterval: ReturnType<typeof setInterval> | null = null
 
 const totalCount = computed(() => questions.value.length)
 const currentQuestion = computed(() => questions.value[currentIdx.value] || null)
+
+// 题型中文映射（后端 start_exam 只返回英文 question_type）
+const TYPE_LABEL: Record<string, string> = {
+  single_choice: '单选题',
+  multiple_choice: '多选题',
+  true_false: '判断题',
+  fill_blank: '填空题',
+  short_answer: '简答题',
+}
+
+// 按题型分组，保持原始题目顺序
+const questionGroups = computed(() => {
+  const groups: { type: string; typeDisplay: string; questions: { globalIdx: number; q: any }[] }[] = []
+  const typeOrder: string[] = []
+  for (let i = 0; i < questions.value.length; i++) {
+    const q = questions.value[i]
+    if (!typeOrder.includes(q.question_type)) {
+      typeOrder.push(q.question_type)
+      groups.push({ type: q.question_type, typeDisplay: TYPE_LABEL[q.question_type] || q.question_type, questions: [] })
+    }
+    groups[groups.length - 1].questions.push({ globalIdx: i, q })
+  }
+  return groups
+})
 const answeredCount = computed(() =>
   questions.value.filter((q: any) => isAnswered(q)).length
 )
@@ -186,6 +214,7 @@ async function autoSave() {
 
   q.answer = answer
   q.status = 'draft'
+  const saveIdx = currentIdx.value
 
   try {
     await saveAnswerApi(examId.value, {
@@ -197,8 +226,9 @@ async function autoSave() {
   }
 
   // 单选和判断题：作答后自动跳到下一题
+  // 只有保存期间用户没有手动切换题目时才跳，避免覆盖用户导航
   const qt = currentQuestion.value.question_type
-  if ((qt === 'single_choice' || qt === 'true_false') && currentIdx.value < totalCount.value - 1) {
+  if (currentIdx.value === saveIdx && (qt === 'single_choice' || qt === 'true_false') && currentIdx.value < totalCount.value - 1) {
     currentIdx.value++
     loadAnswer()
   }
@@ -209,17 +239,11 @@ async function handleSubmit() {
 }
 
 async function doSubmit() {
+  if (submitting.value) return  // 防重复提交
+  // 提交前确保所有答案已落库
+  await saveAllDrafts()
   submitting.value = true
   try {
-    // 先保存所有未保存的答案
-    for (const q of questions.value) {
-      if (q.answer && q.status === 'draft') {
-        await saveAnswerApi(examId.value, {
-          paper_question_id: q.paper_question_id,
-          answer: q.answer,
-        })
-      }
-    }
     const res = await submitExamApi(examId.value)
     ElMessage.success(`提交成功！得分：${res.data.data?.total_score || '待批改'}`)
     if (timerInterval) clearInterval(timerInterval)
@@ -235,7 +259,11 @@ async function loadExam() {
   try {
     const res = await startExamApi(examId.value)
     examInfo.value = res.data.data
-    questions.value = res.data.data.questions || []
+    // API 返回 saved_answer 字段，映射到 answer 以便恢复答题进度
+    questions.value = (res.data.data.questions || []).map((q: any) => ({
+      ...q,
+      answer: q.saved_answer ?? q.answer,
+    }))
 
     // 计算剩余时间
     const endTime = new Date(examInfo.value.end_time).getTime()
@@ -268,14 +296,47 @@ function beforeUnload(e: BeforeUnloadEvent) {
   }
 }
 
+// 批量保存所有已作答但未提交到服务端的答案
+async function saveAllDrafts() {
+  if (submitting.value) return
+  for (const q of questions.value) {
+    const a = q.answer
+    if (a && !(Array.isArray(a) && a.length === 0)) {
+      try {
+        await saveAnswerApi(examId.value, {
+          paper_question_id: q.paper_question_id,
+          answer: a,
+        })
+        q.status = 'saved'
+      } catch { /* 静默 */ }
+    }
+  }
+}
+
+// 键盘导航：方向键左右切换题目
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'ArrowLeft' && currentIdx.value > 0) {
+    e.preventDefault()
+    goToQuestion(currentIdx.value - 1)
+  } else if (e.key === 'ArrowRight' && currentIdx.value < totalCount.value - 1) {
+    e.preventDefault()
+    goToQuestion(currentIdx.value + 1)
+  }
+}
+
 onMounted(() => {
   loadExam()
   window.addEventListener('beforeunload', beforeUnload)
+  window.addEventListener('keydown', handleKeydown)
+  // 每 30 秒自动保存所有草稿，防止浏览器意外关闭丢失进度
+  autoSaveInterval = setInterval(saveAllDrafts, 30_000)
 })
 
 onBeforeUnmount(() => {
   if (timerInterval) clearInterval(timerInterval)
+  if (autoSaveInterval) clearInterval(autoSaveInterval)
   window.removeEventListener('beforeunload', beforeUnload)
+  window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
@@ -303,19 +364,54 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
 }
+.nav-group {
+  margin-bottom: 12px;
+}
+.nav-group:last-child {
+  margin-bottom: 0;
+}
+.nav-group-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 6px;
+  padding-left: 2px;
+}
 .nav-item {
   width: 36px;
   height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  border: 2px solid #dcdfe6;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
+  position: relative;
+  transition: all 0.15s;
 }
-.nav-item.active { border-color: #409eff; background: #ecf5ff; color: #409eff; font-weight: bold; }
+.nav-item:hover { border-color: #a0cfff; }
+.nav-item.active {
+  border-color: #409eff;
+  background: #ecf5ff;
+  color: #409eff;
+  font-weight: 700;
+  font-size: 15px;
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.3);
+  transform: scale(1.15);
+  z-index: 1;
+}
 .nav-item.answered { background: #409eff; border-color: #409eff; color: #fff; }
+.nav-item.active.answered {
+  background: #409eff;
+  border-color: #1a6dd4;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.45);
+  transform: scale(1.15);
+  z-index: 1;
+}
 .question-area { margin-top: 16px; }
 .question-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .question-number { font-weight: bold; font-size: 16px; }

@@ -54,6 +54,20 @@
             <el-option label="困难" value="hard" />
           </el-select>
         </el-form-item>
+        <el-form-item label="分类">
+          <el-select
+            v-model="filters.category"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            clearable
+            placeholder="全部"
+            style="width: 180px"
+            @change="loadQuestions"
+          >
+            <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="机构">
           <el-select v-model="filters.org_id" clearable placeholder="全部" style="width:160px" @change="loadQuestions">
             <el-option v-for="org in orgList" :key="org.org_id" :label="org.org_nm" :value="org.org_id" />
@@ -222,9 +236,10 @@ const categoryDialogVisible = ref(false)
 const categoryEditing = ref<any>(null)
 const categoryForm = reactive({ name: '' })
 
-const filters = reactive<{ question_type: string[]; difficulty: string[]; org_id: string; search: string }>({
+const filters = reactive<{ question_type: string[]; difficulty: string[]; category: number[]; org_id: string; search: string }>({
   question_type: [],
   difficulty: [],
+  category: [],
   org_id: '',
   search: '',
 })
@@ -265,6 +280,7 @@ async function loadQuestions() {
     const params: any = { page: page.value }
     if (filters.question_type.length) params.question_type = filters.question_type.join(',')
     if (filters.difficulty.length) params.difficulty = filters.difficulty.join(',')
+    if (filters.category.length) params.category = filters.category.join(',')
     if (filters.org_id) params.org_id = filters.org_id
     if (filters.search) params.search = filters.search
     const res = await getQuestionsApi(params)

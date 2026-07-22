@@ -173,7 +173,7 @@ def _parse_excel_row(row, header_map, user, default_category_id):
         )
 
     # 创建 Question 对象
-    return Question(
+    return BusiQuestion(
         question_type=question_type,
         content=content,
         options=options,
