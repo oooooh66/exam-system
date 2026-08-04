@@ -1,6 +1,6 @@
 <template>
   <div>
-    <h2>教师工作台</h2>
+    <h2>评委工作台</h2>
     <el-row :gutter="20" style="margin-top:20px" justify="center">
       <el-col :span="8">
         <el-card shadow="hover" class="dash-card">

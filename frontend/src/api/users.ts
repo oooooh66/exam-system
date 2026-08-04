@@ -22,3 +22,8 @@ export function updateUserApi(id: number, data: any) {
 export function deleteUserApi(id: number) {
   return request.delete(`/users/${id}/`)
 }
+
+/** 重置用户密码为用户名 */
+export function resetPasswordApi(id: number) {
+  return request.post(`/users/${id}/reset-password/`)
+}

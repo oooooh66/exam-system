@@ -1,159 +1,136 @@
 <template>
   <div class="score-reports">
     <el-card>
-      <template #header><span>成绩报表</span></template>
+      <template #header>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span>成绩报表</span>
+          <div style="display:flex;gap:8px">
+            <el-select v-model="selectedExamId" filterable placeholder="选择考试" @change="loadResults" style="width:300px" clearable>
+              <el-option v-for="exam in exams" :key="exam.id" :label="exam.name" :value="exam.id" />
+            </el-select>
+            <el-button v-if="selectedExamId" @click="exportScores">导出 Excel</el-button>
+          </div>
+        </div>
+      </template>
 
-      <el-form :inline="true">
-        <el-form-item label="选择考试">
-          <el-select v-model="selectedExamId" filterable placeholder="请选择" @change="loadStats" style="width:300px">
-            <el-option v-for="exam in exams" :key="exam.id" :label="exam.name" :value="exam.id" />
-          </el-select>
+      <template v-if="resultsData">
+        <!-- 分榜 Tab -->
+        <el-tabs v-model="activeTab">
+          <el-tab-pane label="资产榜" name="asset">
+            <ScoreReportTable :list="resultsData.asset_ranking" :float-enabled="resultsData.float_enabled" :is-admin="isAdmin" @adjust="openAdjust" />
+          </el-tab-pane>
+          <el-tab-pane label="负债榜" name="liability">
+            <ScoreReportTable :list="resultsData.liability_ranking" :float-enabled="resultsData.float_enabled" :is-admin="isAdmin" @adjust="openAdjust" />
+          </el-tab-pane>
+          <el-tab-pane label="全部" name="all">
+            <ScoreReportTable :list="resultsData.all" :float-enabled="resultsData.float_enabled" :is-admin="isAdmin" @adjust="openAdjust" />
+          </el-tab-pane>
+        </el-tabs>
+      </template>
+      <el-empty v-else-if="selectedExamId" description="暂无成绩数据" />
+    </el-card>
+
+    <!-- 浮动分调整对话框 -->
+    <el-dialog v-model="adjustVisible" title="浮动分管理" width="460px">
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="姓名">{{ adjustStudent }}</el-descriptions-item>
+        <el-descriptions-item label="考试分数">{{ adjustBase }}</el-descriptions-item>
+        <el-descriptions-item label="当前浮动分">{{ adjustPrev }}</el-descriptions-item>
+        <el-descriptions-item label="最终得分">
+          <b style="font-size:18px;color:#409eff">{{ ((adjustBase||0) + (adjustScore||0)).toFixed(1) }}</b>
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="90px" style="margin-top:16px">
+        <el-form-item label="浮动分">
+          <el-input-number v-model="adjustScore" :min="-10" :max="10" :step="1" />
+          <span style="margin-left:8px;color:#909399;font-size:12px">范围: -10 ~ +10</span>
         </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="loadStats">查询</el-button>
-          <el-button v-if="selectedExamId" @click="exportScores">导出Excel</el-button>
+        <el-form-item label="调整说明">
+          <el-input v-model="adjustReason" type="textarea" :rows="2" placeholder="选填评定依据" />
         </el-form-item>
       </el-form>
-
-      <template v-if="stats">
-        <!-- 概览卡片 -->
-        <el-row :gutter="16" style="margin-bottom:20px">
-          <el-col :span="4">
-            <el-card shadow="hover"><div class="stat-item"><div class="stat-value">{{ stats.total_students }}</div><div class="stat-label">参考人数</div></div></el-card>
-          </el-col>
-          <el-col :span="4">
-            <el-card shadow="hover"><div class="stat-item"><div class="stat-value">{{ stats.average_score }}</div><div class="stat-label">平均分</div></div></el-card>
-          </el-col>
-          <el-col :span="4">
-            <el-card shadow="hover"><div class="stat-item"><div class="stat-value">{{ stats.max_score }}</div><div class="stat-label">最高分</div></div></el-card>
-          </el-col>
-          <el-col :span="4">
-            <el-card shadow="hover"><div class="stat-item"><div class="stat-value">{{ stats.min_score }}</div><div class="stat-label">最低分</div></div></el-card>
-          </el-col>
-          <el-col :span="4">
-            <el-card shadow="hover"><div class="stat-item"><div class="stat-value">{{ stats.pass_rate }}%</div><div class="stat-label">及格率</div></div></el-card>
-          </el-col>
-        </el-row>
-
-        <!-- 学生成绩表 -->
-        <el-table :data="stats.student_scores" stripe>
-          <el-table-column label="排名" type="index" width="60" />
-          <el-table-column prop="student_name" label="学生" />
-          <el-table-column label="得分" width="100">
-            <template #default="{ row }"><b>{{ row.total_score }}</b></template>
-          </el-table-column>
-          <el-table-column prop="submit_time" label="提交时间" width="160" />
-          <el-table-column label="状态" width="100">
-            <template #default="{ row }">
-              <el-tag :type="row.status === 'submitted' ? 'success' : 'warning'" size="small">
-                {{ row.status === 'submitted' ? '正常提交' : '自动提交' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-        </el-table>
+      <template #footer>
+        <el-button @click="adjustVisible = false">取消</el-button>
+        <el-button type="primary" :loading="adjustSaving" @click="confirmAdjust">确认提交</el-button>
       </template>
-
-      <!-- 手动批改区域 -->
-      <el-divider v-if="stats" />
-      <template v-if="stats">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h4>主观题批改</h4>
-          <el-button size="small" @click="loadGradeList" :loading="gradeLoading">刷新待批改</el-button>
-        </div>
-        <el-table v-if="gradeList.length" :data="gradeList" stripe max-height="400">
-          <el-table-column prop="student_name" label="学生" width="100" />
-          <el-table-column prop="question_content" label="题目" show-overflow-tooltip />
-          <el-table-column prop="question_type_display" label="题型" width="80" />
-          <el-table-column label="参考答案" show-overflow-tooltip width="200">
-            <template #default="{ row }">{{ row.correct_answer }}</template>
-          </el-table-column>
-          <el-table-column label="学生答案" show-overflow-tooltip width="200">
-            <template #default="{ row }">{{ row.answer }}</template>
-          </el-table-column>
-          <el-table-column label="分值" width="60"><template #default="{ row }">{{ row.score }}</template></el-table-column>
-          <el-table-column label="打分" width="120">
-            <template #default="{ row }">
-              <el-input-number v-model="row._score" :min="0" :max="row.score" :precision="2" :step="0.5" size="small" style="width:100px" />
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="80">
-            <template #default="{ row }">
-              <el-button type="primary" size="small" @click="doGrade(row)">提交</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-empty v-else-if="gradeSearched" description="没有待批改的题目" />
-      </template>
-    </el-card>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getExamsApi, getGradeListApi, gradeAnswerApi } from '@/api/exams'
-import { getExamStatisticsApi, getExportUrl } from '@/api/reports'
+import { getExamsApi, getExamResultsApi, adjustScoreApi, exportResultsApi } from '@/api/exams'
+import { useAuthStore } from '@/stores/auth'
+import ScoreReportTable from './ScoreReportTable.vue'
 
+const authStore = useAuthStore()
+const isAdmin = ref(authStore.user?.role === 'admin')
 const exams = ref<any[]>([])
 const selectedExamId = ref<number | null>(null)
-const stats = ref<any>(null)
+const resultsData = ref<any>(null)
+const activeTab = ref('asset')
+
+// 浮动分调分
+const adjustVisible = ref(false); const adjustSaving = ref(false)
+const adjustSubmissionId = ref(0); const adjustStudent = ref('')
+const adjustBase = ref(0); const adjustScore = ref(0)
+const adjustReason = ref(''); const adjustPrev = ref(0)
 
 async function loadExams() {
   const res = await getExamsApi()
   exams.value = res.data.data?.results || []
 }
 
-async function loadStats() {
-  if (!selectedExamId.value) return
+async function loadResults() {
+  if (!selectedExamId.value) { resultsData.value = null; return }
   try {
-    const res = await getExamStatisticsApi(selectedExamId.value)
-    stats.value = res.data.data
-  } catch (err: any) {
-    ElMessage.error('获取统计数据失败')
-  }
+    const res = await getExamResultsApi(selectedExamId.value)
+    resultsData.value = res.data.data
+    activeTab.value = resultsData.value?.asset_ranking?.length ? 'asset' : 'all'
+  } catch (err: any) { ElMessage.error('获取成绩失败') }
 }
 
-function exportScores() {
-  if (!selectedExamId.value) return
-  window.open(getExportUrl(selectedExamId.value), '_blank')
+function openAdjust(row: any) {
+  adjustSubmissionId.value = row.id
+  adjustStudent.value = row.student_name
+  adjustBase.value = row.total_score || 0
+  adjustScore.value = row.float_score || 0
+  adjustReason.value = row.float_score_reason || ''
+  adjustPrev.value = row.float_score || 0
+  adjustVisible.value = true
 }
 
-// ========== 手动批改 ==========
-const gradeList = ref<any[]>([])
-const gradeLoading = ref(false)
-const gradeSearched = ref(false)
-
-async function loadGradeList() {
+async function confirmAdjust() {
   if (!selectedExamId.value) return
-  gradeLoading.value = true
-  gradeSearched.value = true
+  adjustSaving.value = true
   try {
-    const res = await getGradeListApi(selectedExamId.value)
-    const items = res.data.data?.answers || []
-    // 初始化打分输入框
-    gradeList.value = items.map((a: any) => ({ ...a, _score: a.score_obtained ?? 0 }))
-  } catch { gradeList.value = [] }
-  finally { gradeLoading.value = false }
-}
-
-async function doGrade(row: any) {
-  try {
-    await gradeAnswerApi(selectedExamId.value!, {
-      answer_id: row.id,
-      score_obtained: row._score,
+    await adjustScoreApi(selectedExamId.value, {
+      submission_id: adjustSubmissionId.value,
+      float_score: adjustScore.value,
+      reason: adjustReason.value,
     })
-    ElMessage.success(`已批改: ${row._score}/${row.score} 分`)
-    gradeList.value = gradeList.value.filter(r => r.id !== row.id)
-  } catch (err: any) {
-    ElMessage.error(err?.response?.data?.message || '批改失败')
-  }
+    ElMessage.success('浮动分已调整')
+    adjustVisible.value = false
+    loadResults()
+  } catch (err: any) { ElMessage.error(err?.response?.data?.message || '调整失败') }
+  finally { adjustSaving.value = false }
+}
+
+async function exportScores() {
+  if (!selectedExamId.value) return
+  try {
+    const res = await exportResultsApi(selectedExamId.value)
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const a = document.createElement('a'); a.href = url
+    a.download = `${resultsData.value?.exam_name || '考试'}_成绩.xlsx`
+    a.click(); window.URL.revokeObjectURL(url)
+  } catch { ElMessage.error('导出失败') }
 }
 
 onMounted(loadExams)
 </script>
 
 <style scoped>
-.stat-item { text-align: center; }
-.stat-value { font-size: 28px; font-weight: bold; color: #409EFF; }
-.stat-label { font-size: 13px; color: #909399; margin-top: 4px; }
+.card-header { display: flex; justify-content: space-between; align-items: center; }
 </style>

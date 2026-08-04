@@ -97,8 +97,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['user'] = {
             'id': user.id,
             'username': user.username,
+            'first_name': user.first_name or '',
             'role': user.role,
-            'role_display': user.get_role_display(),  # 如 '管理员'、'教师'、'学生'
+            'role_display': user.get_role_display(),
+            'password_changed': user.password_changed,
         }
 
         return data
@@ -317,8 +319,9 @@ class BusiUserManageSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusiUser
         fields = [
-            'id', 'username', 'email', 'password', 'role', 'role_display',
-            'is_active', 'date_joined', 'last_login', 'created_at', 'updated_at',
+            'id', 'username', 'first_name', 'password', 'role', 'role_display',
+            'org_nm', 'org_no', 'position', 'business_scope', 'remark', 'is_active',
+            'date_joined', 'last_login', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'date_joined', 'last_login', 'created_at', 'updated_at']
 

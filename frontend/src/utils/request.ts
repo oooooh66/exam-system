@@ -128,6 +128,7 @@ request.interceptors.response.use(
           localStorage.removeItem('access_token')
           router.push({ name: 'Login' })
           ElMessage.error('请先登录')
+          return Promise.reject(error)
         }
       } else {
         // 正在刷新 Token：加入等待队列

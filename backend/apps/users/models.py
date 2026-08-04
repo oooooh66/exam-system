@@ -20,6 +20,7 @@ Model 的作用：
 """
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from utils.fields import ChineseJSONField
 
 
 class BusiUser(AbstractUser):
@@ -49,8 +50,8 @@ class BusiUser(AbstractUser):
     # TextChoices 是 Django 提供的枚举类型，数据库存英文值，界面上显示中文标签
     class Role(models.TextChoices):
         ADMIN = 'admin', '管理员'          # 数据库中存 'admin'，界面显示 '管理员'
-        TEACHER = 'teacher', '教师'        # 数据库中存 'teacher'，界面显示 '教师'
-        STUDENT = 'student', '学生'        # 数据库中存 'student'，界面显示 '学生'
+        TEACHER = 'teacher', '评委'
+        STUDENT = 'student', '考生'
 
     # ==================== 自定义字段 ====================
 
@@ -95,6 +96,56 @@ class BusiUser(AbstractUser):
         verbose_name='更新时间',
         help_text='账号最后修改的时间',
         db_comment='每次保存时自动更新为当前时间',
+    )
+
+    # ==================== 业务属性字段 ====================
+
+    # business_scope: 分管业务范围（用于资产/负债考核分类），存数组如 ["asset","liability"]
+    business_scope = ChineseJSONField(
+        default=list, blank=True,
+        verbose_name='分管业务',
+        help_text='["asset"]=资产 ["liability"]=负债 ["asset","liability"]=两者 ["retail"]=零售',
+        db_comment='分管业务范围（JSON数组）',
+    )
+
+    # position: 岗位
+    position = models.CharField(
+        max_length=50, blank=True, default='',
+        verbose_name='岗位',
+        help_text='行长/副行长/业务部负责人等',
+        db_comment='岗位名称',
+    )
+
+    # remark: 备注
+    remark = models.TextField(
+        blank=True, default='',
+        verbose_name='备注',
+        help_text='补充说明',
+        db_comment='备注信息',
+    )
+
+    # org_nm: 所属村行/机构名称
+    org_nm = models.CharField(
+        max_length=100, blank=True, default='',
+        verbose_name='所属机构',
+        help_text='村行或中心支行名称',
+        db_comment='所属村行/中心支行名称',
+    )
+
+    # org_no: 机构号
+    org_no = models.CharField(
+        max_length=20, blank=True, default='',
+        verbose_name='机构号',
+        help_text='机构的唯一编号',
+        db_comment='机构编号',
+    )
+
+    # password_changed: 是否已修改过初始密码
+    password_changed = models.BooleanField(
+        default=True,
+        verbose_name='已修改密码',
+        help_text='用户首次登录后是否已修改初始密码',
+        db_comment='是否已修改初始密码：1=已改，0=未改',
     )
 
     # ==================== Meta 内部类：表级别配置 ====================

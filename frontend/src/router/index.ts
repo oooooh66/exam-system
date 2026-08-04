@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/auth'
 // 懒加载页面组件
 const LoginView = () => import('@/views/auth/LoginView.vue')
 const RegisterView = () => import('@/views/auth/RegisterView.vue')
+const ChangePasswordView = () => import('@/views/auth/ChangePasswordView.vue')
 const DashboardLayout = () => import('@/layouts/DashboardLayout.vue')
 const NotFoundView = () => import('@/views/NotFoundView.vue')
 
@@ -32,6 +33,12 @@ const routes: RouteRecordRaw[] = [
     name: 'Register',
     component: RegisterView,
     meta: { guest: true },
+  },
+  {
+    path: '/change-password',
+    name: 'ChangePassword',
+    component: ChangePasswordView,
+    meta: { requiresAuth: true },
   },
 
   // ============================================

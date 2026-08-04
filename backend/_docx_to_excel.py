@@ -7,8 +7,8 @@ import re, zipfile
 import xml.etree.ElementTree as ET
 import openpyxl
 
-DOCX = r"C:\project\exam-system\资产业务题库 (1).docx"
-OUT = r"C:\project\exam-system\资产业务题库_导入模板2.xlsx"
+DOCX = r"C:\project\exam-system\零售条线题库.docx"
+OUT = r"C:\project\exam-system\零售条线题库_导入模板3.xlsx"
 
 # ---------- 1. read paragraphs ----------
 def read_paras(path):

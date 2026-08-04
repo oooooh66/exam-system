@@ -43,7 +43,7 @@ from apps.users.serializers import (
     ChangePasswordSerializer,        # 修改密码序列化器
     BusiUserManageSerializer,            # 管理员用户管理序列化器
 )
-from utils.permissions import IsAdmin, IsOwnerOrAdmin   # 自定义权限类
+from utils.permissions import IsAdmin, IsOwnerOrAdmin, IsAdminOrTeacher
 from utils.response import APIResponse                    # 统一响应类
 
 # ==================== 获取 User 模型（这种方式比直接 import 更灵活） ====================
@@ -232,25 +232,34 @@ class ChangePasswordView(APIView):
     """
 
     def post(self, request):
-        # context={'request': request} 是关键 —— 把当前请求传给 Serializer
-        # Serializer 里通过 self.context['request'].user 获取当前登录用户
         serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
-
         if not serializer.is_valid():
-            return APIResponse.error(
-                code=status.HTTP_400_BAD_REQUEST,
-                message=self._get_first_error(serializer.errors),
-            )
-
+            return APIResponse.error(code=status.HTTP_400_BAD_REQUEST, message=self._get_first_error(serializer.errors))
         serializer.save()
         return APIResponse.success(message='密码修改成功')
 
     def _get_first_error(self, errors):
         for field, messages in errors.items():
-            if isinstance(messages, list):
-                return str(messages[0])
+            if isinstance(messages, list): return str(messages[0])
             return str(messages)
         return '请求参数错误'
+
+
+class ChangeInitialPasswordView(APIView):
+    """首次登录强制修改初始密码（不需要旧密码）"""
+
+    def post(self, request):
+        new_password = request.data.get('new_password', '')
+        new_password_confirm = request.data.get('new_password_confirm', '')
+        if not new_password or len(new_password) < 6:
+            return APIResponse.error(code=400, message='新密码至少6位')
+        if new_password != new_password_confirm:
+            return APIResponse.error(code=400, message='两次密码不一致')
+        user = request.user
+        user.set_password(new_password)
+        user.password_changed = True
+        user.save()
+        return APIResponse.success(message='密码设置成功，请重新登录')
 
 
 # ============================================
@@ -401,3 +410,13 @@ class BusiUserViewSet(mixins.ListModelMixin,      # 列表查询 GET /api/users/
                 return self._get_first_error(messages)
             return str(messages)
         return '请求参数错误'
+
+    @action(methods=['post'], detail=True, url_path='reset-password', permission_classes=[IsAdminOrTeacher])
+    def reset_password(self, request, pk=None):
+        """管理员/教师重置用户密码为用户名"""
+        user = self.get_object()
+        from django.contrib.auth.hashers import make_password
+        user.password = make_password(user.username)
+        user.password_changed = False
+        user.save(update_fields=['password', 'password_changed'])
+        return APIResponse.success(message=f'用户 {user.username} 密码已重置为用户名')

@@ -11,8 +11,10 @@ import { loginApi } from '@/api/auth'
 export interface UserInfo {
   id: number
   username: string
+  first_name: string
   role: 'admin' | 'teacher' | 'student'
   role_display: string
+  password_changed: boolean
 }
 
 export const useAuthStore = defineStore(
@@ -68,8 +70,10 @@ export const useAuthStore = defineStore(
           user.value = {
             id: payload.user_id,
             username: payload.username,
+            first_name: '',
             role: payload.role,
-            role_display: ({ admin: '管理员', teacher: '教师', student: '学生' } as Record<string, string>)[payload.role] || payload.role,
+            role_display: ({ admin: '管理员', teacher: '评委', student: '考生' } as Record<string, string>)[payload.role] || payload.role,
+            password_changed: true,  // JWT 兜底默认视为已改密
           }
         }
       } catch { /* ignore */ }

@@ -1,6 +1,6 @@
 <template>
   <div>
-    <h2>学生工作台</h2>
+    <h2>考生工作台</h2>
     <el-row :gutter="20" style="margin-top:20px">
       <el-col :span="8">
         <el-card shadow="hover">

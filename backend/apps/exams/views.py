@@ -6,12 +6,13 @@
 - 学生：查看可参加的考试、开始答题、提交答案、暂存答案
 """
 from django.utils import timezone
-from django.db import transaction
+from django.db import transaction, models
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.exams.models import BusiExamSession, BusiStudentAnswer, BusiExamSubmission
+from apps.users.models import BusiUser
 from apps.exams.serializers import (
     BusiExamSessionListSerializer,
     BusiExamSessionDetailSerializer,
@@ -87,62 +88,81 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
 
     @action(methods=['post'], detail=True, url_path='start')
     def start_exam(self, request, pk=None):
-        """学生开始答题"""
-        exam = self.get_object()
+        """学生开始答题（动态抽题）"""
+        import random
+        from apps.exams.models import ExamRule
+        from apps.questions.models import BusiQuestion
 
-        # 检查考试状态
+        exam = self.get_object()
         now = timezone.now()
+
         if now < exam.start_time:
             return APIResponse.error(code=400, message='考试尚未开始')
         if now > exam.end_time:
             return APIResponse.error(code=400, message='考试已结束')
 
-        # 检查是否已提交
         submission, created = BusiExamSubmission.objects.get_or_create(
-            exam_session=exam,
-            student=request.user,
+            exam_session=exam, student=request.user,
             defaults={'status': 'in_progress', 'start_time': now},
         )
-
-        if submission.status == 'submitted':
+        if submission.status in ('submitted', 'auto_submitted'):
             return APIResponse.error(code=400, message='您已提交过本场考试')
 
         if created:
-            # 首次进入：初始化答题记录
-            paper_questions = exam.paper.paper_questions.all()
-            for pq in paper_questions:
-                BusiStudentAnswer.objects.get_or_create(
-                    exam_session=exam,
-                    student=request.user,
-                    paper_question=pq,
-                    defaults={'answer': None, 'status': 'draft'},
-                )
+            # 首次进入：按规则动态抽题
+            rules = ExamRule.objects.filter(exam_session=exam)
+            if not rules.exists():
+                return APIResponse.error(code=400, message='该考试未配置抽题规则')
 
-        # 返回试卷完整信息
+            drawn = []
+            order = 0
+            for rule in rules:
+                qs = BusiQuestion.objects.filter(
+                    is_deleted=False, question_type=rule.question_type,
+                )
+                if rule.categories:
+                    qs = qs.filter(category_id__in=rule.categories)
+                all_ids = list(qs.values_list('id', flat=True))
+                sampled = random.sample(all_ids, min(rule.count, len(all_ids)))
+                for qid in sampled:
+                    question = BusiQuestion.objects.get(id=qid)
+                    pq, _ = BusiPaperQuestion.objects.get_or_create(
+                        paper=exam.paper, question=question,
+                        defaults={'order': order, 'score': question.default_score},
+                    )
+                    BusiStudentAnswer.objects.get_or_create(
+                        exam_session=exam, student=request.user, paper_question=pq,
+                        defaults={'answer': None, 'status': 'draft'},
+                    )
+                    drawn.append(qid)
+                    order += 1
+
+            submission.drawn_question_ids = drawn
+            submission.save(update_fields=['drawn_question_ids'])
+
+        # 返回试卷信息（已有答题记录或刚创建的）
+        pqs = BusiPaperQuestion.objects.filter(
+            question_id__in=submission.drawn_question_ids,
+            paper=exam.paper,
+        ).select_related('question').order_by('order')
+
         paper_data = {
-            'exam_id': exam.id,
-            'exam_name': exam.name,
-            'paper_id': exam.paper.id,
-            'paper_name': exam.paper.name,
+            'exam_id': exam.id, 'exam_name': exam.name,
+            'paper_id': exam.paper.id, 'paper_name': exam.paper.name,
             'duration_minutes': exam.paper.duration_minutes,
-            'total_score': exam.paper.total_score,
-            'start_time': exam.start_time,
-            'end_time': exam.end_time,
+            'total_score': sum(pq.score for pq in pqs),
+            'start_time': exam.start_time, 'end_time': exam.end_time,
             'submission_start_time': submission.start_time,
             'questions': [],
         }
-
-        for pq in exam.paper.paper_questions.all().select_related('question'):
+        for pq in pqs:
             answer = BusiStudentAnswer.objects.filter(
                 exam_session=exam, student=request.user, paper_question=pq,
             ).first()
             paper_data['questions'].append({
-                'paper_question_id': pq.id,
-                'order': pq.order,
-                'score': pq.score,
+                'paper_question_id': pq.id, 'order': pq.order, 'score': pq.score,
                 'question_type': pq.question.question_type,
-                'content': pq.question.content,
-                'options': pq.question.options,
+                'content': pq.question.content, 'options': pq.question.options,
                 'saved_answer': answer.answer if answer else None,
                 'status': answer.status if answer else 'draft',
             })
@@ -203,6 +223,22 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
         if submission.status == 'submitted':
             return APIResponse.error(code=400, message='您已提交过本场考试')
 
+        # 检查是否所有题目都已作答（考试时间到自动提交时允许跳过）
+        if not request.data.get('force'):
+            answers = BusiStudentAnswer.objects.filter(
+                exam_session=exam, student=request.user,
+            )
+            total = answers.count()
+            empty = 0
+            for a in answers:
+                ans = a.answer
+                if ans is None or ans == '' or ans == []:
+                    empty += 1
+            if total == 0:
+                return APIResponse.error(code=400, message='未检测到答题记录')
+            if empty > 0:
+                return APIResponse.error(code=400, message=f'还有 {empty} 道题未作答，请全部完成后再提交')
+
         # 批量更新答案状态
         with transaction.atomic():
             BusiStudentAnswer.objects.filter(
@@ -236,20 +272,29 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
             ).distinct()
 
         serializer = BusiExamSessionListSerializer(qs, many=True)
-        data = serializer.data
+        data = list(serializer.data)
 
-        # 为学生附加提交状态
+        # 为学生过滤：按业务范围（business_scope）匹配考试分类前缀
         if request.user.is_student:
+            student_scope = set(getattr(request.user, 'business_scope', []))
+            qs_with_scope = qs.all()  # re-fetch to get model instances for exam_scope
+            scope_map = {e.id: set(e.exam_scope or []) for e in qs_with_scope}
+            data = [
+                e for e in data
+                if not scope_map.get(e['id']) or student_scope & scope_map[e['id']]
+            ]
+
             exam_ids = [e['id'] for e in data]
             submissions = {
-                s.exam_session_id: s.status
+                s.exam_session_id: s
                 for s in BusiExamSubmission.objects.filter(
                     exam_session_id__in=exam_ids, student=request.user,
                 )
             }
             for exam in data:
-                sub_status = submissions.get(exam['id'])
-                exam['submission_status'] = sub_status
+                sub = submissions.get(exam['id'])
+                exam['submission_status'] = sub.status if sub else None
+                exam['score_obtained'] = float(sub.total_score) if sub and sub.total_score else None
 
         return APIResponse.success(data={'results': data, 'count': qs.count()})
 
@@ -332,6 +377,277 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
             return str(msgs[0]) if isinstance(msgs, list) else str(msgs)
         return '参数错误'
 
+    @action(methods=['post'], detail=False, url_path='import-candidates', permission_classes=[IsTeacher])
+    def import_candidates(self, request):
+        """批量导入考生（从 Excel 文件）"""
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return APIResponse.error(code=400, message='请上传 Excel 文件')
 
-# 需要导入 models 模块用于 Q 查询
-from django.db import models
+        try:
+            import openpyxl
+        except ImportError:
+            return APIResponse.error(code=500, message='服务端缺少 openpyxl 依赖')
+
+        try:
+            wb = openpyxl.load_workbook(file_obj, read_only=True)
+            ws = wb.active
+        except Exception as e:
+            return APIResponse.error(code=400, message=f'无法解析 Excel 文件: {str(e)}')
+
+        # 第 2 行是真正的表头：序号/村行/机构号/柜员号/姓名/岗位/分管业务/备注
+        created_count = 0
+        updated_count = 0
+        errors = []
+        scope_counter = {'资产': 0, '负债': 0, 'both': 0, '零售': 0}
+        seen = {}  # 柜员号 -> set of business_scopes
+
+        SCOPE_MAP = {
+            '资产': ['资产'], '负债': ['负债'], '零售': ['零售'],
+            '资产和负债': ['资产', '负债'],
+            '资产、负债': ['资产', '负债'],
+            '资产负债': ['资产', '负债'],
+        }
+
+        def _parse_scope(raw: str) -> list:
+            """兼容解析分管业务：精确匹配 → 模糊匹配 → 空"""
+            raw = raw.strip().replace(' ', '').replace('　', '')
+            if not raw:
+                return []
+            if raw in SCOPE_MAP:
+                return SCOPE_MAP[raw]
+            # 模糊匹配：检查包含的关键词
+            scopes = []
+            if '资产' in raw:
+                scopes.append('资产')
+            if '负债' in raw:
+                scopes.append('负债')
+            if '零售' in raw:
+                scopes.append('零售')
+            if '制度' in raw:
+                scopes.append('制度')
+            return scopes
+
+        for row_idx, row in enumerate(ws.iter_rows(min_row=3, values_only=True), start=3):
+            # 列: 0=序号, 1=村行, 2=机构号, 3=柜员号, 4=姓名, 5=岗位, 6=分管业务, 7=备注
+            teller_id = row[3]
+            name = row[4]
+            pos = str(row[5]).strip() if row[5] is not None else ''
+            org_name = row[1]
+            org_code = str(row[2]).strip() if row[2] is not None else ''
+            business_raw = str(row[6]).strip() if row[6] is not None else ''
+            rem = str(row[7]).strip() if row[7] is not None else ''
+
+            if not teller_id or not name:
+                continue
+
+            scopes = _parse_scope(business_raw)
+            if not scopes:
+                continue
+
+            try:
+                defaults = {
+                    'first_name': str(name),
+                    'role': 'student',
+                    'org_nm': str(org_name) if org_name else '',
+                    'org_no': org_code,
+                    'position': pos,
+                    'remark': rem,
+                    'is_active': True,
+                }
+                user, created = BusiUser.objects.update_or_create(
+                    username=str(int(teller_id)),
+                    defaults=defaults,
+                )
+                # 新用户：默认密码=用户名，首次登录需改密
+                if created:
+                    from django.contrib.auth.hashers import make_password
+                    user.password = make_password(str(int(teller_id)))
+                    user.password_changed = False
+                    user.save(update_fields=['password', 'password_changed'])
+            except Exception as e:
+                errors.append(f'第{row_idx}行 创建用户失败: {str(e)}')
+                continue
+
+            tid = str(int(teller_id))
+            if tid not in seen:
+                seen[tid] = set()
+            seen[tid].update(scopes)
+
+            if created:
+                created_count += 1
+            else:
+                updated_count += 1
+
+        # 第二遍：合并所有分管业务到数组
+        for tid, scopes in seen.items():
+            combined = sorted(scopes)  # ['asset'] 或 ['asset','liability'] 等
+            try:
+                BusiUser.objects.filter(username=tid).update(business_scope=combined)
+            except Exception:
+                pass
+            key = 'both' if len(combined) > 1 else combined[0]
+            scope_counter[key] = scope_counter.get(key, 0) + 1
+
+        wb.close()
+        return APIResponse.success(data={
+            'created': created_count,
+            'updated': updated_count,
+            'total': len(seen),
+            'by_scope': scope_counter,
+            'errors': errors,
+        }, message=f'导入完成：新增 {created_count} 人，更新 {updated_count} 人，共 {len(seen)} 人')
+
+    # ==================== P3: 成绩管理 ====================
+
+    @action(methods=['get'], detail=True, url_path='results', permission_classes=[IsTeacher])
+    def exam_results(self, request, pk=None):
+        """查看某场考试的全部考生成绩（按业务分榜）"""
+        exam = self.get_object()
+        submissions = BusiExamSubmission.objects.filter(
+            exam_session=exam, is_deleted=False,
+        ).select_related('student', 'adjusted_by').order_by('-total_score')
+
+        results = []
+        for sub in submissions:
+            adj = sub.adjusted_by
+            results.append({
+                'id': sub.id,
+                'student_id': sub.student_id,
+                'student_username': sub.student.username,
+                'student_name': sub.student.first_name or sub.student.username,
+                'org_no': getattr(sub.student, 'org_no', ''),
+                'org_nm': getattr(sub.student, 'org_nm', ''),
+                'business_scope': getattr(sub.student, 'business_scope', []),
+                'status': sub.status,
+                'total_score': float(sub.total_score) if sub.total_score else 0,
+                'float_score': float(sub.float_score) if sub.float_score else 0,
+                'float_score_reason': sub.float_score_reason or '',
+                'final_score': (float(sub.total_score or 0) + float(sub.float_score or 0)),
+                'submit_time': sub.submit_time.strftime('%Y-%m-%d %H:%M:%S') if sub.submit_time else '',
+                'adjusted_by': f'{adj.username}-{adj.first_name}' if adj else '',
+                'adjusted_at': sub.adjusted_at.strftime('%Y-%m-%d %H:%M:%S') if sub.adjusted_at else '',
+            })
+
+        # 分榜
+        asset_list = [r for r in results if isinstance(r['business_scope'], list) and '资产' in r['business_scope']]
+        liability_list = [r for r in results if isinstance(r['business_scope'], list) and '负债' in r['business_scope']]
+        asset_list.sort(key=lambda x: x['final_score'], reverse=True)
+        liability_list.sort(key=lambda x: x['final_score'], reverse=True)
+
+        return APIResponse.success(data={
+            'all': results,
+            'asset_ranking': asset_list,
+            'liability_ranking': liability_list,
+            'exam_name': exam.name,
+            'float_enabled': hasattr(exam, 'config') and exam.config.float_score_enabled,
+        })
+
+    @action(methods=['post'], detail=True, url_path='adjust-score', permission_classes=[IsTeacher])
+    def adjust_score(self, request, pk=None):
+        """评委调整某考生浮动分"""
+        submission_id = request.data.get('submission_id')
+        float_score = request.data.get('float_score')
+        reason = request.data.get('reason', '')
+
+        if submission_id is None or float_score is None:
+            return APIResponse.error(code=400, message='请提供 submission_id 和 float_score')
+
+        try:
+            sub = BusiExamSubmission.objects.get(id=submission_id, exam_session_id=pk)
+        except BusiExamSubmission.DoesNotExist:
+            return APIResponse.error(code=404, message='提交记录不存在')
+
+        # 非管理员不能重复修改已打过的浮动分
+        if sub.float_score is not None and not request.user.is_admin:
+            return APIResponse.error(code=403, message='浮动分已打过，仅管理员可多次修改，请联系管理员调整')
+
+        try:
+            fs = float(float_score)
+        except (ValueError, TypeError):
+            return APIResponse.error(code=400, message='浮动分必须为数字')
+
+        # 范围校验
+        config = getattr(sub.exam_session, 'config', None)
+        if config and config.float_score_enabled:
+            if fs < config.float_score_min or fs > config.float_score_max:
+                return APIResponse.error(code=400,
+                    message=f'浮动分超出范围 [{config.float_score_min}, {config.float_score_max}]')
+
+        sub.float_score = fs
+        sub.float_score_reason = str(reason)[:500] if reason else ''
+        sub.adjusted_by = request.user
+        sub.adjusted_at = timezone.now()
+        sub.save()
+
+        return APIResponse.success(data={
+            'id': sub.id,
+            'student_name': sub.student.first_name or sub.student.username,
+            'total_score': float(sub.total_score or 0),
+            'float_score': float(sub.float_score or 0),
+            'final_score': float(sub.total_score or 0) + float(sub.float_score or 0),
+        }, message='浮动分调整成功')
+
+    @action(methods=['get'], detail=True, url_path='export', permission_classes=[IsTeacher])
+    def export_results(self, request, pk=None):
+        """导出成绩为 Excel"""
+        exam = self.get_object()
+        submissions = BusiExamSubmission.objects.filter(
+            exam_session=exam, is_deleted=False,
+        ).select_related('student', 'adjusted_by')
+
+        import io
+        import openpyxl
+        from openpyxl.styles import Font, Alignment
+        from django.http import HttpResponse
+
+        wb = openpyxl.Workbook()
+
+        for scope, label in [('资产', '资产榜'), ('负债', '负债榜')]:
+            if scope == 'asset':
+                sheet = wb.active
+                sheet.title = label
+            else:
+                sheet = wb.create_sheet(label)
+
+            headers = ['排名', '姓名', '村行', '基础分', '浮动分', '最终得分', '分管业务', '提交时间']
+            for c, h in enumerate(headers, 1):
+                cell = sheet.cell(1, c, h)
+                cell.font = Font(bold=True)
+
+            rows = []
+            for sub in submissions:
+                bs = getattr(sub.student, 'business_scope', [])
+                if not isinstance(bs, list) or scope not in bs:
+                    continue
+                rows.append({
+                    'name': sub.student.first_name or sub.student.username,
+                    'org': getattr(sub.student, 'org_nm', ''),
+                    'total': float(sub.total_score or 0),
+                    'float': float(sub.float_score or 0),
+                    'final': float(sub.total_score or 0) + float(sub.float_score or 0),
+                    'scope': ', '.join(bs),
+                    'time': sub.submit_time.strftime('%Y-%m-%d %H:%M') if sub.submit_time else '',
+                })
+            rows.sort(key=lambda x: x['final'], reverse=True)
+
+            for i, r in enumerate(rows, 2):
+                sheet.cell(i, 1, i - 1).alignment = Alignment(horizontal='center')
+                sheet.cell(i, 2, r['name'])
+                sheet.cell(i, 3, r['org'])
+                sheet.cell(i, 4, r['total']).alignment = Alignment(horizontal='center')
+                sheet.cell(i, 5, r['float']).alignment = Alignment(horizontal='center')
+                sheet.cell(i, 6, r['final']).alignment = Alignment(horizontal='center')
+                sheet.cell(i, 7, r['scope'])
+                sheet.cell(i, 8, r['time'])
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        response = HttpResponse(
+            output.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = f'attachment; filename="{exam.name}_成绩.xlsx"'
+        return response

@@ -33,6 +33,7 @@ from apps.users.views import (
     CustomTokenObtainPairView, # 登录
     ProfileView,                # 个人信息
     ChangePasswordView,         # 修改密码
+    ChangeInitialPasswordView,  # 首次登录强制改密
     BusiUserViewSet,               # 管理员用户管理
 )
 
@@ -70,4 +71,7 @@ urlpatterns = [
 
     # 修改密码：POST /api/auth/change-password/
     path('auth/change-password/', ChangePasswordView.as_view(), name='change-password'),
+
+    # 首次登录修改初始密码：POST /api/auth/change-initial-password/
+    path('auth/change-initial-password/', ChangeInitialPasswordView.as_view(), name='change-initial-password'),
 ]

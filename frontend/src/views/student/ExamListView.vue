@@ -3,9 +3,14 @@
     <el-card>
       <template #header><span>我的考试</span></template>
       <el-table v-loading="loading" :data="exams" stripe>
-        <el-table-column prop="name" label="考试名称" />
-        <el-table-column prop="paper_name" label="试卷" />
-        <el-table-column prop="total_score" label="总分" width="80" />
+        <el-table-column prop="name" label="考试名称" min-width="140" />
+        <el-table-column prop="total_score" label="总分" width="70" />
+        <el-table-column label="得分" width="90">
+          <template #default="{ row }">
+            <b v-if="row.score_obtained != null" style="color:#409eff">{{ row.score_obtained }}</b>
+            <span v-else style="color:#c0c4cc">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="duration" label="时长(分)" width="90" />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">

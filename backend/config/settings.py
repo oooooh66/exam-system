@@ -42,6 +42,7 @@ INSTALLED_APPS = [
 
     # 第三方库
     'rest_framework',                    # Django REST Framework
+    'utils.apps.ChineseJsonConfig',      # MUST before app models: patches MySQL JSON to store Chinese directly
     'corsheaders',                       # 跨域支持
     'rest_framework_simplejwt',          # JWT 认证
     'rest_framework_simplejwt.token_blacklist',  # JWT 黑名单（支持登出）

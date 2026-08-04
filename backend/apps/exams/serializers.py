@@ -2,6 +2,7 @@
 from rest_framework import serializers
 
 from apps.exams.models import BusiExamSession, BusiStudentAnswer, BusiExamSubmission
+from apps.papers.models import BusiPaper
 from apps.papers.serializers import BusiPaperSerializer
 
 
@@ -9,7 +10,7 @@ class BusiExamSessionListSerializer(serializers.ModelSerializer):
     """考试场次列表序列化器"""
     paper_name = serializers.CharField(source='paper.name', read_only=True)
     duration = serializers.IntegerField(source='paper.duration_minutes', read_only=True)
-    total_score = serializers.IntegerField(source='paper.total_score', read_only=True)
+    total_score = serializers.IntegerField(source='computed_total_score', read_only=True)
     status = serializers.CharField(source='computed_status', read_only=True)
     student_count = serializers.SerializerMethodField()
 
@@ -18,7 +19,7 @@ class BusiExamSessionListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'paper', 'paper_name', 'total_score',
             'duration', 'start_time', 'end_time', 'status',
-            'student_count', 'created_at',
+            'student_count', 'created_at', 'exam_scope',
         ]
 
     def get_student_count(self, obj):
@@ -59,16 +60,24 @@ class BusiExamSessionDetailSerializer(serializers.ModelSerializer):
 
 class BusiExamSessionCreateSerializer(serializers.ModelSerializer):
     """创建考试场次序列化器"""
-    student_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        required=False,
-        write_only=True,
-        help_text='指定学生 ID 列表，为空则开放所有人',
-    )
+    student_ids = serializers.ListField(child=serializers.IntegerField(), required=False, write_only=True)
+    float_score_enabled = serializers.BooleanField(required=False, default=False)
+    float_score_min = serializers.IntegerField(required=False, default=-10)
+    float_score_max = serializers.IntegerField(required=False, default=10)
+    rules = serializers.ListField(child=serializers.DictField(), required=False, write_only=True,
+                                   help_text='组卷规则 [{question_type, count, categories}]')
+    duration_minutes = serializers.IntegerField(required=False, default=60, write_only=True,
+                                                 help_text='考试时长（分钟）')
+    pass_score = serializers.IntegerField(required=False, default=60, write_only=True)
+    exam_scope = serializers.ListField(child=serializers.CharField(), required=False, default=list, write_only=True)
+    paper = serializers.PrimaryKeyRelatedField(queryset=BusiPaper.objects.filter(is_deleted=False),
+                                                required=False, allow_null=True)
 
     class Meta:
         model = BusiExamSession
-        fields = ['id', 'name', 'paper', 'start_time', 'end_time', 'student_ids']
+        fields = ['id', 'name', 'paper', 'start_time', 'end_time', 'student_ids',
+                  'float_score_enabled', 'float_score_min', 'float_score_max', 'rules',
+                  'duration_minutes', 'pass_score', 'exam_scope']
 
     def validate(self, attrs):
         if attrs['start_time'] >= attrs['end_time']:
@@ -76,10 +85,62 @@ class BusiExamSessionCreateSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        from apps.exams.models import ExamConfig, ExamRule
+        from apps.papers.models import BusiPaper as Paper
         student_ids = validated_data.pop('student_ids', [])
-        exam = BusiExamSession.objects.create(**validated_data, created_by=self.context['request'].user)
+        float_enabled = validated_data.pop('float_score_enabled', False)
+        float_min = validated_data.pop('float_score_min', -10)
+        float_max = validated_data.pop('float_score_max', 10)
+        rules = validated_data.pop('rules', [])
+        duration = validated_data.pop('duration_minutes', 60)
+        pass_s = validated_data.pop('pass_score', 60)
+        paper = validated_data.pop('paper', None)
+        exam_scope = validated_data.pop('exam_scope', [])
+
+        # 未选试卷则自动创建容器卷
+        if not paper:
+            paper = Paper.objects.create(
+                name=f'{validated_data["name"]}（动态卷）',
+                duration_minutes=duration, pass_score=pass_s,
+                created_by=self.context['request'].user,
+            )
+
+        exam = BusiExamSession.objects.create(paper=paper, **validated_data, created_by=self.context['request'].user)
         if student_ids:
             exam.students.set(student_ids)
+
+        if float_enabled:
+            ExamConfig.objects.create(exam_session=exam, float_score_enabled=True,
+                                       float_score_min=float_min, float_score_max=float_max)
+
+        for r in rules:
+            qtype = r.get('question_type', '')
+            count = int(r.get('count', 0))
+            cats = r.get('categories', [])
+            if qtype and count > 0:
+                ExamRule.objects.create(exam_session=exam, question_type=qtype, count=count, categories=cats)
+
+        if exam_scope:
+            exam.exam_scope = sorted(exam_scope)
+            exam.save(update_fields=['exam_scope'])
+        else:
+            # 从抽题分类中提取业务范围前缀（如"资产-指标"→"资产"）
+            all_cat_ids = set()
+            for r in rules:
+                cats = r.get('categories', [])
+                if cats:
+                    all_cat_ids.update(cats)
+            if all_cat_ids:
+                from apps.questions.models import BusiQuestionCategory
+                cats = BusiQuestionCategory.objects.filter(id__in=all_cat_ids).values_list('name', flat=True)
+                prefixes = set()
+                for name in cats:
+                    pre = name.split('-')[0].strip()
+                    if pre:
+                        prefixes.add(pre)
+                exam.exam_scope = sorted(prefixes)
+                exam.save(update_fields=['exam_scope'])
+
         return exam
 
 

@@ -3,8 +3,8 @@
 
 创建默认角色用户：
 - admin / admin123 （管理员）
-- teacher / teacher123 （教师）
-- student / student123 （学生）
+- teacher / teacher123 （评委）
+- student / student123 （考生）
 
 使用方法：
     python manage.py init_data
@@ -37,11 +37,10 @@ class Command(BaseCommand):
         if created:
             teacher.set_password('teacher123')
             teacher.save()
-            self.stdout.write(self.style.SUCCESS('教师创建成功 (teacher / teacher123)'))
+            self.stdout.write(self.style.SUCCESS('评委创建成功 (teacher / teacher123)'))
         else:
-            self.stdout.write(self.style.WARNING('教师已存在，跳过'))
+            self.stdout.write(self.style.WARNING('评委已存在，跳过'))
 
-        # 创建学生
         student, created = BusiUser.objects.get_or_create(
             username='student',
             defaults={'role': 'student'},
@@ -49,8 +48,8 @@ class Command(BaseCommand):
         if created:
             student.set_password('student123')
             student.save()
-            self.stdout.write(self.style.SUCCESS('学生创建成功 (student / student123)'))
+            self.stdout.write(self.style.SUCCESS('考生创建成功 (student / student123)'))
         else:
-            self.stdout.write(self.style.WARNING('学生已存在，跳过'))
+            self.stdout.write(self.style.WARNING('考生已存在，跳过'))
 
         self.stdout.write(self.style.SUCCESS('\n初始化完成！'))

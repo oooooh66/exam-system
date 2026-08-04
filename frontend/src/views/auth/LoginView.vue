@@ -87,15 +87,20 @@ async function handleLogin() {
 
   loading.value = true
   try {
-    await authStore.login(form.username, form.password)
+    const data = await authStore.login(form.username, form.password)
     ElMessage.success('登录成功')
+
+    // 首次登录（未改初始密码）→ 强制跳到改密页
+    if (data.user && !data.user.password_changed) {
+      router.push('/change-password')
+      return
+    }
 
     // 根据角色跳转
     const redirect = (route.query.redirect as string) || '/'
     router.push(redirect)
-  } catch (err: any) {
-    const msg = err?.response?.data?.message || '登录失败'
-    ElMessage.error(msg)
+  } catch {
+    // 错误消息已由请求拦截器统一提示
   } finally {
     loading.value = false
   }

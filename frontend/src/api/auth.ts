@@ -17,8 +17,10 @@ export interface LoginResponse {
   user?: {
     id: number
     username: string
+    first_name: string
     role: string
     role_display: string
+    password_changed: boolean
   }
 }
 
@@ -65,4 +67,9 @@ export function refreshTokenApi(refresh: string) {
  */
 export function getUserProfileApi() {
   return request.get<ApiResponse<UserProfile>>('/auth/profile/')
+}
+
+/** 首次登录修改初始密码 */
+export function changeInitialPasswordApi(data: { new_password: string; new_password_confirm: string }) {
+  return request.post<ApiResponse<any>>('/auth/change-initial-password/', data)
 }

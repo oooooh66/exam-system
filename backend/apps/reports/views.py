@@ -110,7 +110,7 @@ class BusiStudentScoresView(APIView):
                 'exam_id': sub.exam_session.id,
                 'exam_name': sub.exam_session.name,
                 'paper_name': sub.exam_session.paper.name,
-                'total_score': sub.exam_session.paper.total_score,
+                'total_score': sub.exam_session.computed_total_score,
                 'score_obtained': sub.total_score,
                 'status': sub.status,
                 'submit_time': sub.submit_time,
