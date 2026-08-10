@@ -326,9 +326,15 @@ class ExamRule(models.Model):
         BusiExamSession, on_delete=models.CASCADE, related_name='rules',
         verbose_name='考试场次', db_comment='关联的考试场次ID',
     )
+    question_source = models.CharField(
+        max_length=10, default='regular', verbose_name='题目来源',
+        help_text='regular=常规题库, data=数据指标题',
+        db_comment='题目来源：regular=常规题库, data=数据指标题',
+    )
     question_type = models.CharField(max_length=30, verbose_name='题型')
     count = models.IntegerField(default=0, verbose_name='抽题数量')
     categories = models.JSONField(default=list, blank=True, verbose_name='分类筛选')
+    data_dt = models.CharField(max_length=6, blank=True, default='', verbose_name='数据日期')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -339,3 +345,30 @@ class ExamRule(models.Model):
 
     def __str__(self):
         return f'{self.exam_session.name} - {self.question_type} x{self.count}'
+
+
+class BusiDataQuestion(models.Model):
+    """机构数据指标题（从Excel画像数据生成）"""
+    org_no = models.CharField(max_length=20, verbose_name='机构号', db_comment='机构号，考生抽题时按此匹配')
+    data_dt = models.CharField(max_length=6, verbose_name='数据日期', db_comment='数据月份，格式YYYYMM')
+    question_stem = models.TextField(verbose_name='题干', db_comment='table+label+busi+col拼接')
+    correct_answer = models.DecimalField(max_digits=20, decimal_places=6, verbose_name='正确答案')
+    options = ChineseJSONField(default=list, verbose_name='选项列表', help_text='4个选项的JSON数组，已随机打乱')
+    num_fmt = models.CharField(max_length=5, default='3', verbose_name='数值格式')
+    table_name = models.CharField(max_length=200, default='', verbose_name='表名')
+    label_type = models.CharField(max_length=100, default='', verbose_name='标签类型')
+    busi_type = models.CharField(max_length=100, default='', verbose_name='业务类型')
+    col_nm = models.CharField(max_length=100, default='', verbose_name='列名')
+    question = models.ForeignKey('questions.BusiQuestion', on_delete=models.CASCADE, null=True, blank=True,
+                                  verbose_name='关联题目', db_comment='对应的BusiQuestion记录ID')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'busi_data_questions'
+        verbose_name = '数据指标题'
+        verbose_name_plural = verbose_name
+        unique_together = [('org_no', 'data_dt', 'question_stem')]
+
+    def __str__(self):
+        return f'[{self.org_no}/{self.data_dt}] {self.question_stem[:60]}'

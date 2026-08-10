@@ -325,3 +325,102 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
         for _, msgs in errors.items():
             return str(msgs[0]) if isinstance(msgs, list) else str(msgs)
         return '参数错误'
+
+    @action(methods=['post'], detail=False, url_path='import-data',
+             permission_classes=[IsTeacher], parser_classes=[MultiPartParser])
+    def import_data_questions(self, request):
+        """导入机构画像数据指标题"""
+        file_obj = request.FILES.get('file')
+        data_dt = request.data.get('data_dt', '')
+
+        if not file_obj:
+            return APIResponse.error(code=400, message='请上传 Excel 文件')
+        if not data_dt:
+            return APIResponse.error(code=400, message='请填写数据月份')
+
+        import tempfile, os
+        from apps.exams.management.commands.import_data_questions import (
+            generate_interval_options, build_stem, classify_table, fmt_num,
+        )
+        from apps.exams.models import BusiDataQuestion
+        from apps.questions.models import BusiQuestion, BusiQuestionCategory
+        import openpyxl
+        from decimal import Decimal
+
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
+        try:
+            for chunk in file_obj.chunks():
+                tmp.write(chunk)
+            tmp.close()
+
+            wb = openpyxl.load_workbook(tmp.name, read_only=True)
+            ws = wb.active
+
+            COL_ORG_ID, COL_TABLE, COL_LABEL, COL_BUSI, COL_COLNM, COL_FMT, COL_EXPR = 0, 6, 8, 10, 12, 14, 15
+            SKIP_KW = {'同比', '占比', '比年初', '比上月', '比基数'}
+
+            created = updated = 0
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                col_nm = str(row[COL_COLNM]).strip() if row[COL_COLNM] else ''
+                if any(kw in col_nm for kw in SKIP_KW):
+                    continue
+                if row[COL_EXPR] is None or float(row[COL_EXPR]) == 0:
+                    continue
+                org = str(row[COL_ORG_ID]).strip()
+                org_nm = str(row[1]).strip() if row[1] else ''
+                expr = Decimal(str(row[COL_EXPR]))
+                stem = build_stem(str(row[COL_TABLE]).strip(), str(row[COL_LABEL]).strip(),
+                                  str(row[COL_BUSI]).strip(), col_nm)
+                options, correct_letter = generate_interval_options(float(expr), str(row[COL_FMT]).strip())
+
+                cat_name = classify_table(str(row[COL_TABLE]).strip())
+                category, _ = BusiQuestionCategory.objects.get_or_create(
+                    name=cat_name,
+                    defaults={'created_by': None},
+                )
+
+                obj, is_new = BusiDataQuestion.objects.update_or_create(
+                    org_no=org, data_dt=data_dt, question_stem=stem,
+                    defaults={
+                        'correct_answer': float(expr),
+                        'options': [
+                            f'[{fmt_num(options["A"][0])}, {fmt_num(options["A"][1])}]',
+                            f'[{fmt_num(options["B"][0])}, {fmt_num(options["B"][1])}]',
+                            f'[{fmt_num(options["C"][0])}, {fmt_num(options["C"][1])}]',
+                            f'[{fmt_num(options["D"][0])}, {fmt_num(options["D"][1])}]',
+                        ],
+                        'num_fmt': str(row[COL_FMT]).strip(),
+                        'table_name': str(row[COL_TABLE]).strip(),
+                        'label_type': str(row[COL_LABEL]).strip(),
+                        'busi_type': str(row[COL_BUSI]).strip(),
+                        'col_nm': col_nm,
+                    },
+                )
+                q, _ = BusiQuestion.objects.update_or_create(
+                    question_type='single_choice', content=stem, org_id=org,
+                    defaults={
+                        'options': [
+                            f'[{options["A"][0]}, {options["A"][1]}]',
+                            f'[{options["B"][0]}, {options["B"][1]}]',
+                            f'[{options["C"][0]}, {options["C"][1]}]',
+                            f'[{options["D"][0]}, {options["D"][1]}]',
+                        ],
+                        'correct_answer': correct_letter,
+                        'default_score': 1,
+                        'org_nm': org_nm,
+                        'category': category,
+                    },
+                )
+                obj.question = q
+                obj.save(update_fields=['question'])
+                if is_new: created += 1
+                else: updated += 1
+
+            wb.close()
+        finally:
+            os.unlink(tmp.name)
+
+        return APIResponse.success(data={
+            'created': created, 'updated': updated,
+            'data_dt': data_dt,
+        }, message=f'导入完成：新增 {created} 题，更新 {updated} 题')

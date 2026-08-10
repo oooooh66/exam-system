@@ -59,7 +59,7 @@
           :value="String.fromCharCode(65 + optIdx)"
           class="option-item"
         >
-          {{ opt }}
+          {{ formatOption(opt) }}
         </el-radio>
       </el-radio-group>
 
@@ -77,7 +77,7 @@
           :value="String.fromCharCode(65 + optIdx)"
           class="option-item"
         >
-          {{ opt }}
+          {{ formatOption(opt) }}
         </el-checkbox>
       </el-checkbox-group>
 
@@ -113,14 +113,14 @@
     </el-card>
 
     <!-- 交卷确认对话框 -->
-    <el-dialog v-model="submitDialogVisible" title="确认交卷" width="400px">
+    <el-dialog v-model="submitDialogVisible" title="确认交卷" width="400px" :close-on-click-modal="false">
       <p>您确定要提交试卷吗？交卷后无法修改答案。</p>
       <p v-if="unansweredCount > 0" style="color:#e6a23c">
         还有 {{ unansweredCount }} 道题未作答！
       </p>
       <template #footer>
         <el-button @click="submitDialogVisible = false">继续答题</el-button>
-        <el-button type="primary" :loading="submitting" @click="doSubmit">确认交卷</el-button>
+        <el-button v-if="unansweredCount === 0" type="primary" :loading="submitting" @click="doSubmit">确认交卷</el-button>
       </template>
     </el-dialog>
   </div>
@@ -176,6 +176,13 @@ const answeredCount = computed(() =>
   questions.value.filter((q: any) => isAnswered(q)).length
 )
 const unansweredCount = computed(() => totalCount.value - answeredCount.value)
+
+function formatOption(opt: any): string {
+  if (Array.isArray(opt)) {
+    return `[${opt[0]}, ${opt[1]}]`
+  }
+  return String(opt)
+}
 
 const formattedTime = computed(() => {
   const h = Math.floor(timer.value / 3600)
@@ -238,13 +245,12 @@ async function handleSubmit() {
   submitDialogVisible.value = true
 }
 
-async function doSubmit() {
-  if (submitting.value) return  // 防重复提交
-  // 提交前确保所有答案已落库
+async function doSubmit(force = false) {
+  if (submitting.value) return
   await saveAllDrafts()
   submitting.value = true
   try {
-    const res = await submitExamApi(examId.value)
+    const res = await submitExamApi(examId.value, force ? { force: true } : undefined)
     ElMessage.success(`提交成功！得分：${res.data.data?.total_score || '待批改'}`)
     if (timerInterval) clearInterval(timerInterval)
     router.push('/student/exams')
@@ -275,10 +281,10 @@ async function loadExam() {
       if (timer.value > 0) {
         timer.value--
       } else {
-        // 时间到自动提交
+        // 时间到自动提交（允许未答完）
         if (timerInterval) clearInterval(timerInterval)
         ElMessage.warning('考试时间到，正在自动提交...')
-        doSubmit()
+        doSubmit(true)
       }
     }, 1000)
 

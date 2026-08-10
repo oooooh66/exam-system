@@ -6,6 +6,7 @@
           <span>题库管理</span>
           <div class="header-actions">
             <el-button size="small" @click="openCategoryDialog">管理分类</el-button>
+            <el-button size="small" type="warning" @click="dataImportVisible = true">导入指标题库</el-button>
             <el-upload
               :show-file-list="false"
               accept=".xlsx,.xls"
@@ -82,7 +83,7 @@
       </el-form>
 
       <el-table v-loading="loading" :data="questions" stripe>
-        <el-table-column label="ID" width="60" prop="id" />
+        <el-table-column label="序号" width="60" type="index" />
         <el-table-column label="题型" width="90">
           <template #default="{ row }"><el-tag size="small">{{ row.question_type_display }}</el-tag></template>
         </el-table-column>
@@ -212,13 +213,31 @@
         <el-button v-if="categoryEditing" @click="categoryForm.name = ''; categoryEditing = null">取消</el-button>
       </div>
     </el-dialog>
+
+    <!-- 导入指标题库对话框 -->
+    <el-dialog v-model="dataImportVisible" title="导入指标题库" width="450px">
+      <el-form label-width="80px">
+        <el-form-item label="数据月份">
+          <el-input v-model="data_dt" placeholder="例：202607" style="width:140px" />
+        </el-form-item>
+        <el-form-item label="文件上传">
+          <el-upload :show-file-list="true" accept=".xlsx,.xls" :auto-upload="false" :on-change="handleDataFile">
+            <el-button size="small">选择 Excel 文件</el-button>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dataImportVisible = false">取消</el-button>
+        <el-button type="primary" :loading="dataImporting" @click="doDataImport">开始导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getQuestionsApi, createQuestionApi, updateQuestionApi, deleteQuestionApi, importQuestionsApi, getCategoriesApi, createCategoryApi, updateCategoryApi, deleteCategoryApi, getOrgsApi } from '@/api/questions'
+import { getQuestionsApi, createQuestionApi, updateQuestionApi, deleteQuestionApi, importQuestionsApi, importDataQuestionsApi, getCategoriesApi, createCategoryApi, updateCategoryApi, deleteCategoryApi, getOrgsApi } from '@/api/questions'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -229,6 +248,10 @@ const total = ref(0)
 const page = ref(1)
 const editing = ref(false)
 const dialogVisible = ref(false)
+const dataImportVisible = ref(false)
+const data_dt = ref('202607')
+const dataFile = ref<File | null>(null)
+const dataImporting = ref(false)
 const formRef = ref()
 
 // 分类管理相关
@@ -296,27 +319,34 @@ async function loadCategories() {
 
 function openDialog(row?: any) {
   editing.value = !!row
-  if (row) {
-    Object.assign(form, {
-      question_type: row.question_type,
-      content: row.content,
-      options: row.options?.slice() || [],
-      correct_answer: row.correct_answer,
-      analysis: row.analysis || '',
-      category: row.category,
-      difficulty: row.difficulty, org_id: row.org_id || '', org_nm: row.org_nm || '',
-      default_score: row.default_score,
-    })
-    if (!form.options.length) form.options = ['', '', '', '']
-  } else {
-    form.question_type = 'single_choice'
-    form.content = ''
-    form.options = ['', '', '', '']
-    form.correct_answer = ''
-    form.analysis = ''
-    form.category = null
-    form.difficulty = 'easy'
-    form.default_score = 5
+  try {
+    if (row) {
+      Object.assign(form, {
+        question_type: row.question_type,
+        content: row.content,
+        options: Array.isArray(row.options) ? row.options.slice() : ['', '', '', ''],
+        correct_answer: row.correct_answer,
+        analysis: row.analysis || '',
+        category: row.category,
+        difficulty: row.difficulty || 'easy',
+        org_id: row.org_id || '',
+        org_nm: row.org_nm || '',
+        default_score: row.default_score,
+      })
+    } else {
+      form.question_type = 'single_choice'
+      form.content = ''
+      form.options = ['', '', '', '']
+      form.correct_answer = ''
+      form.analysis = ''
+      form.category = null
+      form.difficulty = 'easy'
+      form.default_score = 5
+      form.org_id = ''
+      form.org_nm = ''
+    }
+  } catch (e) {
+    console.error('openDialog error:', e)
   }
   dialogVisible.value = true
 }
@@ -361,6 +391,29 @@ async function handleImport(params: any) {
   } catch (err: any) {
     ElMessage.error('导入失败')
   } finally { loading.value = false }
+}
+
+// ==================== 指标题库导入 ====================
+
+function handleDataFile(file: any) {
+  dataFile.value = file.raw
+}
+
+async function doDataImport() {
+  if (!dataFile.value) { ElMessage.warning('请选择文件'); return }
+  if (!data_dt.value) { ElMessage.warning('请输入数据月份'); return }
+  dataImporting.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', dataFile.value)
+    formData.append('data_dt', data_dt.value)
+    const res = await importDataQuestionsApi(formData)
+    ElMessage.success(res.data.message || '导入完成')
+    dataImportVisible.value = false
+    loadQuestions()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '导入失败')
+  } finally { dataImporting.value = false }
 }
 
 // ==================== 分类管理 ====================

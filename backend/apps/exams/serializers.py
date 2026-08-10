@@ -117,8 +117,14 @@ class BusiExamSessionCreateSerializer(serializers.ModelSerializer):
             qtype = r.get('question_type', '')
             count = int(r.get('count', 0))
             cats = r.get('categories', [])
-            if qtype and count > 0:
-                ExamRule.objects.create(exam_session=exam, question_type=qtype, count=count, categories=cats)
+            src = r.get('question_source', 'regular')
+            dt = r.get('data_dt', '')
+            if (qtype or src == 'data') and count > 0:
+                ExamRule.objects.create(
+                    exam_session=exam, question_type=qtype,
+                    count=count, categories=cats,
+                    question_source=src, data_dt=dt,
+                )
 
         if exam_scope:
             exam.exam_scope = sorted(exam_scope)

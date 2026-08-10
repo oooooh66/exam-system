@@ -90,7 +90,7 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
     def start_exam(self, request, pk=None):
         """学生开始答题（动态抽题）"""
         import random
-        from apps.exams.models import ExamRule
+        from apps.exams.models import ExamRule, BusiDataQuestion
         from apps.questions.models import BusiQuestion
 
         exam = self.get_object()
@@ -109,7 +109,6 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
             return APIResponse.error(code=400, message='您已提交过本场考试')
 
         if created:
-            # 首次进入：按规则动态抽题
             rules = ExamRule.objects.filter(exam_session=exam)
             if not rules.exists():
                 return APIResponse.error(code=400, message='该考试未配置抽题规则')
@@ -117,25 +116,52 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
             drawn = []
             order = 0
             for rule in rules:
-                qs = BusiQuestion.objects.filter(
-                    is_deleted=False, question_type=rule.question_type,
-                )
-                if rule.categories:
-                    qs = qs.filter(category_id__in=rule.categories)
-                all_ids = list(qs.values_list('id', flat=True))
-                sampled = random.sample(all_ids, min(rule.count, len(all_ids)))
-                for qid in sampled:
-                    question = BusiQuestion.objects.get(id=qid)
-                    pq, _ = BusiPaperQuestion.objects.get_or_create(
-                        paper=exam.paper, question=question,
-                        defaults={'order': order, 'score': question.default_score},
+                if rule.question_source == 'data':
+                    # 数据指标题：按机构号+数据日期过滤
+                    org_no = getattr(request.user, 'org_no', '')
+                    qs = BusiDataQuestion.objects.filter(
+                        org_no=org_no, data_dt=rule.data_dt,
                     )
-                    BusiStudentAnswer.objects.get_or_create(
-                        exam_session=exam, student=request.user, paper_question=pq,
-                        defaults={'answer': None, 'status': 'draft'},
+                    if rule.categories:
+                        qs = qs.filter(table_name__in=rule.categories)
+                    all_ids = list(qs.values_list('id', flat=True))
+                    sampled = random.sample(all_ids, min(rule.count, len(all_ids)))
+                    for dq_id in sampled:
+                        dq = BusiDataQuestion.objects.get(id=dq_id)
+                        question = dq.question
+                        if not question:
+                            continue
+                        pq, _ = BusiPaperQuestion.objects.get_or_create(
+                            paper=exam.paper, question=question,
+                            defaults={'order': order, 'score': question.default_score},
+                        )
+                        BusiStudentAnswer.objects.get_or_create(
+                            exam_session=exam, student=request.user, paper_question=pq,
+                            defaults={'answer': None, 'status': 'draft'},
+                        )
+                        drawn.append(question.id)
+                        order += 1
+                else:
+                    # 常规题库
+                    qs = BusiQuestion.objects.filter(
+                        is_deleted=False, question_type=rule.question_type,
                     )
-                    drawn.append(qid)
-                    order += 1
+                    if rule.categories:
+                        qs = qs.filter(category_id__in=rule.categories)
+                    all_ids = list(qs.values_list('id', flat=True))
+                    sampled = random.sample(all_ids, min(rule.count, len(all_ids)))
+                    for qid in sampled:
+                        question = BusiQuestion.objects.get(id=qid)
+                        pq, _ = BusiPaperQuestion.objects.get_or_create(
+                            paper=exam.paper, question=question,
+                            defaults={'order': order, 'score': question.default_score},
+                        )
+                        BusiStudentAnswer.objects.get_or_create(
+                            exam_session=exam, student=request.user, paper_question=pq,
+                            defaults={'answer': None, 'status': 'draft'},
+                        )
+                        drawn.append(qid)
+                        order += 1
 
             submission.drawn_question_ids = drawn
             submission.save(update_fields=['drawn_question_ids'])
@@ -529,9 +555,16 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
                 'adjusted_at': sub.adjusted_at.strftime('%Y-%m-%d %H:%M:%S') if sub.adjusted_at else '',
             })
 
-        # 分榜
-        asset_list = [r for r in results if isinstance(r['business_scope'], list) and '资产' in r['business_scope']]
-        liability_list = [r for r in results if isinstance(r['business_scope'], list) and '负债' in r['business_scope']]
+        # 分榜：考试未限定范围时按考生业务范围分，否则双重过滤
+        exam_scope = getattr(exam, 'exam_scope', []) or []
+        if not exam_scope:
+            asset_list = [r for r in results if isinstance(r['business_scope'], list) and '资产' in r['business_scope']]
+            liability_list = [r for r in results if isinstance(r['business_scope'], list) and '负债' in r['business_scope']]
+        else:
+            asset_list = [r for r in results
+                          if '资产' in exam_scope and isinstance(r['business_scope'], list) and '资产' in r['business_scope']]
+            liability_list = [r for r in results
+                              if '负债' in exam_scope and isinstance(r['business_scope'], list) and '负债' in r['business_scope']]
         asset_list.sort(key=lambda x: x['final_score'], reverse=True)
         liability_list.sort(key=lambda x: x['final_score'], reverse=True)
 

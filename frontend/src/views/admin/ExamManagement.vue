@@ -54,8 +54,6 @@
           <el-checkbox-group v-model="form.exam_scope">
             <el-checkbox value="资产">资产</el-checkbox>
             <el-checkbox value="负债">负债</el-checkbox>
-            <el-checkbox value="制度">制度</el-checkbox>
-            <el-checkbox value="零售">零售</el-checkbox>
           </el-checkbox-group>
           <div style="font-size:11px;color:#909399">只有分管业务包含此项的考生才能看到该考试</div>
         </el-form-item>
