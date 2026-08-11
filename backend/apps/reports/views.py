@@ -113,7 +113,7 @@ class BusiStudentScoresView(APIView):
                 'total_score': sub.exam_session.computed_total_score,
                 'score_obtained': sub.total_score,
                 'status': sub.status,
-                'submit_time': sub.submit_time,
+                'submit_time': sub.submit_time.strftime('%Y-%m-%d %H:%M:%S') if sub.submit_time else '',
             })
 
         return APIResponse.success(data=data)

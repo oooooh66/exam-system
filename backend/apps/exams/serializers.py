@@ -188,6 +188,8 @@ class BusiExamSubmissionSerializer(serializers.ModelSerializer):
     """考试提交记录序列化器"""
     student_name = serializers.CharField(source='student.username', read_only=True)
     exam_name = serializers.CharField(source='exam_session.name', read_only=True)
+    submit_time = serializers.DateTimeField(format='%Y-%m-%d %H:%M:%S', read_only=True)
+    start_time = serializers.DateTimeField(format='%Y-%m-%d %H:%M:%S', read_only=True)
 
     class Meta:
         model = BusiExamSubmission

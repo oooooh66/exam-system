@@ -11,7 +11,7 @@
         </div>
       </template>
       <el-table v-loading="loading" :data="users" stripe>
-        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column label="序号" width="60" type="index" />
         <el-table-column prop="username" label="用户名" width="110" />
         <el-table-column prop="org_no" label="机构号" width="100" />
         <el-table-column prop="first_name" label="姓名" width="80" />
@@ -45,6 +45,12 @@
           </template>
         </el-table-column>
       </el-table>
+      <div style="margin-top:16px;display:flex;justify-content:flex-end">
+        <el-pagination
+          v-model:current-page="page" :page-size="pageSize" :total="total"
+          layout="total, prev, pager, next, jumper" @current-change="loadUsers"
+        />
+      </div>
     </el-card>
 
     <!-- 添加/编辑对话框 -->
@@ -122,6 +128,9 @@ import { importCandidatesApi } from '@/api/exams'
 const loading = ref(false)
 const saving = ref(false)
 const users = ref<any[]>([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const dialogVisible = ref(false)
 const editingUser = ref<any>(null)
 const formRef = ref()
@@ -139,8 +148,11 @@ const rules = {
 
 async function loadUsers() {
   loading.value = true
-  try { const res = await getUsersApi(); users.value = res.data.data?.results || [] }
-  finally { loading.value = false }
+  try {
+    const res = await getUsersApi({ page: page.value, page_size: pageSize.value })
+    users.value = res.data?.data?.results || res.data?.results || []
+    total.value = res.data?.data?.count || res.data?.count || 0
+  } finally { loading.value = false }
 }
 
 function openDialog(row?: any) {

@@ -114,7 +114,7 @@
     </el-card>
 
     <!-- 添加/编辑对话框 -->
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑题目' : '添加题目'" width="700px">
+    <el-dialog v-model="dialogVisible" :title="editing ? '编辑题目' : '添加题目'" width="700px" :key="dialogKey">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
         <el-form-item label="题目类型" prop="question_type">
           <el-select v-model="form.question_type" :disabled="editing" @change="onTypeChange">
@@ -235,7 +235,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getQuestionsApi, createQuestionApi, updateQuestionApi, deleteQuestionApi, importQuestionsApi, importDataQuestionsApi, getCategoriesApi, createCategoryApi, updateCategoryApi, deleteCategoryApi, getOrgsApi } from '@/api/questions'
 
@@ -248,6 +248,7 @@ const total = ref(0)
 const page = ref(1)
 const editing = ref(false)
 const dialogVisible = ref(false)
+const dialogKey = ref(0)
 const dataImportVisible = ref(false)
 const data_dt = ref('202607')
 const dataFile = ref<File | null>(null)
@@ -321,18 +322,16 @@ function openDialog(row?: any) {
   editing.value = !!row
   try {
     if (row) {
-      Object.assign(form, {
-        question_type: row.question_type,
-        content: row.content,
-        options: Array.isArray(row.options) ? row.options.slice() : ['', '', '', ''],
-        correct_answer: row.correct_answer,
-        analysis: row.analysis || '',
-        category: row.category,
-        difficulty: row.difficulty || 'easy',
-        org_id: row.org_id || '',
-        org_nm: row.org_nm || '',
-        default_score: row.default_score,
-      })
+      form.question_type = row.question_type
+      form.content = row.content
+      form.options = Array.isArray(row.options) ? row.options.slice() : ['', '', '', '']
+      form.correct_answer = row.correct_answer
+      form.analysis = row.analysis || ''
+      form.category = row.category
+      form.difficulty = row.difficulty || 'easy'
+      form.org_id = row.org_id || ''
+      form.org_nm = row.org_nm || ''
+      form.default_score = row.default_score
     } else {
       form.question_type = 'single_choice'
       form.content = ''
@@ -348,6 +347,7 @@ function openDialog(row?: any) {
   } catch (e) {
     console.error('openDialog error:', e)
   }
+  dialogKey.value++
   dialogVisible.value = true
 }
 

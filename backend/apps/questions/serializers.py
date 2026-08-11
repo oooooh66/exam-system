@@ -112,10 +112,7 @@ class BusiQuestionSerializer(serializers.ModelSerializer):
 
 class BusiQuestionListSerializer(serializers.ModelSerializer):
     """
-    题目列表序列化器（简化版，不包含正确答案和解析）
-
-    用于教师选题时浏览题目列表，避免直接暴露答案。
-    管理员和教师可以通过详情接口查看完整信息。
+    题目列表序列化器
     """
     question_type_display = serializers.CharField(source='get_question_type_display', read_only=True)
     difficulty_display = serializers.CharField(source='get_difficulty_display', read_only=True)
@@ -125,9 +122,9 @@ class BusiQuestionListSerializer(serializers.ModelSerializer):
         model = BusiQuestion
         fields = [
             'id', 'question_type', 'question_type_display',
-            'content', 'options',
+            'content', 'options', 'correct_answer', 'analysis',
             'category', 'category_name', 'difficulty', 'difficulty_display',
-            'default_score', 'org_nm', 'created_at',
+            'default_score', 'org_id', 'org_nm', 'created_at',
         ]
 
 

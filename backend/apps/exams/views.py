@@ -422,11 +422,6 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
             return APIResponse.error(code=400, message=f'无法解析 Excel 文件: {str(e)}')
 
         # 第 2 行是真正的表头：序号/村行/机构号/柜员号/姓名/岗位/分管业务/备注
-        created_count = 0
-        updated_count = 0
-        errors = []
-        scope_counter = {'资产': 0, '负债': 0, 'both': 0, '零售': 0}
-        seen = {}  # 柜员号 -> set of business_scopes
 
         SCOPE_MAP = {
             '资产': ['资产'], '负债': ['负债'], '零售': ['零售'],
@@ -454,75 +449,91 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
                 scopes.append('制度')
             return scopes
 
-        for row_idx, row in enumerate(ws.iter_rows(min_row=3, values_only=True), start=3):
-            # 列: 0=序号, 1=村行, 2=机构号, 3=柜员号, 4=姓名, 5=岗位, 6=分管业务, 7=备注
+        # 第一遍：收集所有行数据到内存，按用户名合并分管业务
+        total_rows = 0
+        seen = {}  # username -> merged row
+        for row in ws.iter_rows(min_row=3, values_only=True):
             teller_id = row[3]
             name = row[4]
-            pos = str(row[5]).strip() if row[5] is not None else ''
-            org_name = row[1]
-            org_code = str(row[2]).strip() if row[2] is not None else ''
-            business_raw = str(row[6]).strip() if row[6] is not None else ''
-            rem = str(row[7]).strip() if row[7] is not None else ''
-
             if not teller_id or not name:
                 continue
-
-            scopes = _parse_scope(business_raw)
+            scopes = _parse_scope(str(row[6]).strip() if row[6] is not None else '')
             if not scopes:
                 continue
-
-            try:
-                defaults = {
-                    'first_name': str(name),
-                    'role': 'student',
-                    'org_nm': str(org_name) if org_name else '',
-                    'org_no': org_code,
-                    'position': pos,
-                    'remark': rem,
-                    'is_active': True,
-                }
-                user, created = BusiUser.objects.update_or_create(
-                    username=str(int(teller_id)),
-                    defaults=defaults,
-                )
-                # 新用户：默认密码=用户名，首次登录需改密
-                if created:
-                    from django.contrib.auth.hashers import make_password
-                    user.password = make_password(str(int(teller_id)))
-                    user.password_changed = False
-                    user.save(update_fields=['password', 'password_changed'])
-            except Exception as e:
-                errors.append(f'第{row_idx}行 创建用户失败: {str(e)}')
+            total_rows += 1
+            uname = str(int(teller_id))
+            if uname in seen:
+                seen[uname]['scopes'].update(scopes)
                 continue
-
-            tid = str(int(teller_id))
-            if tid not in seen:
-                seen[tid] = set()
-            seen[tid].update(scopes)
-
-            if created:
-                created_count += 1
-            else:
-                updated_count += 1
-
-        # 第二遍：合并所有分管业务到数组
-        for tid, scopes in seen.items():
-            combined = sorted(scopes)  # ['asset'] 或 ['asset','liability'] 等
-            try:
-                BusiUser.objects.filter(username=tid).update(business_scope=combined)
-            except Exception:
-                pass
-            key = 'both' if len(combined) > 1 else combined[0]
-            scope_counter[key] = scope_counter.get(key, 0) + 1
-
+            seen[uname] = {
+                'username': uname,
+                'name': str(name),
+                'org_name': str(row[1]) if row[1] else '',
+                'org_code': str(row[2]).strip() if row[2] is not None else '',
+                'position': str(row[5]).strip() if row[5] is not None else '',
+                'remark': str(row[7]).strip() if row[7] is not None else '',
+                'scopes': set(scopes),
+            }
         wb.close()
+
+        # 批量操作
+        from django.contrib.auth.hashers import make_password
+        rows = list(seen.values())
+        usernames = {r['username'] for r in rows}
+        existing = {u.username: u for u in BusiUser.objects.filter(username__in=usernames)}
+
+        to_create = []
+        to_update = []
+        created_count = updated_count = 0
+
+        for r in rows:
+            uname = r['username']
+            defaults = {
+                'first_name': r['name'], 'role': 'student',
+                'org_nm': r['org_name'], 'org_no': r['org_code'],
+                'position': r['position'], 'remark': r['remark'],
+                'is_active': True,
+            }
+            if uname in existing:
+                user = existing[uname]
+                changed = False
+                for k, v in defaults.items():
+                    if getattr(user, k) != v:
+                        setattr(user, k, v)
+                        changed = True
+                if changed:
+                    to_update.append(user)
+                updated_count += 1
+            else:
+                defaults['username'] = uname
+                defaults['password'] = make_password(uname)
+                defaults['password_changed'] = False
+                to_create.append(BusiUser(**defaults))
+                created_count += 1
+
+        if to_create:
+            BusiUser.objects.bulk_create(to_create, batch_size=200)
+        if to_update:
+            BusiUser.objects.bulk_update(
+                to_update, ['first_name', 'org_nm', 'org_no', 'position', 'remark'],
+                batch_size=200,
+            )
+
+        scope_counter = {'资产': 0, '负债': 0, 'both': 0, '零售': 0}
+        for r in rows:
+            combined = sorted(r['scopes'])
+            BusiUser.objects.filter(username=r['username']).update(business_scope=combined)
+            key = 'both' if len(combined) > 1 else combined[0] if combined else ''
+            if key:
+                scope_counter[key] = scope_counter.get(key, 0) + 1
+
         return APIResponse.success(data={
             'created': created_count,
             'updated': updated_count,
-            'total': len(seen),
+            'total': len(rows),
+            'total_rows': total_rows,
             'by_scope': scope_counter,
-            'errors': errors,
-        }, message=f'导入完成：新增 {created_count} 人，更新 {updated_count} 人，共 {len(seen)} 人')
+        }, message=f'导入完成：共 {total_rows} 行数据，{len(rows)} 名考生（新增 {created_count}，更新 {updated_count}）')
 
     # ==================== P3: 成绩管理 ====================
 
