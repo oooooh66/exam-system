@@ -134,6 +134,12 @@ class BusiQuestion(models.Model):
         help_text='出题人',
         db_comment='出题人用户ID',
     )
+    data_dt = models.CharField(
+        max_length=10, blank=True, null=True,
+        verbose_name='数据月份',
+        help_text='导入指标题库时的数据月份，如 202607',
+        db_comment='数据月份，如202607',
+    )
     is_deleted = models.BooleanField(
         default=False, db_index=True,
         verbose_name='是否已删除',

@@ -345,7 +345,6 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
         from apps.exams.models import BusiDataQuestion
         from apps.questions.models import BusiQuestion, BusiQuestionCategory
         import openpyxl
-        from decimal import Decimal
 
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
         try:
@@ -357,21 +356,33 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
             ws = wb.active
 
             COL_ORG_ID, COL_TABLE, COL_LABEL, COL_BUSI, COL_COLNM, COL_FMT, COL_EXPR = 0, 6, 8, 10, 12, 14, 15
-            SKIP_KW = {'同比', '占比', '比年初', '比上月', '比基数'}
+
+            def _parse_expr(raw, num_fmt: str) -> float:
+                s = str(raw).strip().replace(',', '').replace('，', '')
+                if not s:
+                    return 0.0
+                if num_fmt == '3' and '万' in s:
+                    return float(s.replace('万', '')) * 10000
+                if num_fmt == '1' and '%' in s:
+                    return float(s.replace('%', '')) / 100
+                return float(s)
+
+            def _map_fmt(fmt: str) -> str:
+                return '1' if fmt == '1' else '3'
 
             created = updated = 0
             for row in ws.iter_rows(min_row=2, values_only=True):
                 col_nm = str(row[COL_COLNM]).strip() if row[COL_COLNM] else ''
-                if any(kw in col_nm for kw in SKIP_KW):
+                fmt = str(row[COL_FMT]).strip() if row[COL_FMT] is not None else '2'
+                expr_raw = row[COL_EXPR]
+                if expr_raw is None:
                     continue
-                if row[COL_EXPR] is None or float(row[COL_EXPR]) == 0:
-                    continue
+                val = _parse_expr(expr_raw, fmt)
                 org = str(row[COL_ORG_ID]).strip()
                 org_nm = str(row[1]).strip() if row[1] else ''
-                expr = Decimal(str(row[COL_EXPR]))
                 stem = build_stem(str(row[COL_TABLE]).strip(), str(row[COL_LABEL]).strip(),
                                   str(row[COL_BUSI]).strip(), col_nm)
-                options, correct_letter = generate_interval_options(float(expr), str(row[COL_FMT]).strip())
+                options, correct_letter = generate_interval_options(val, _map_fmt(fmt))
 
                 cat_name = classify_table(str(row[COL_TABLE]).strip())
                 category, _ = BusiQuestionCategory.objects.get_or_create(
@@ -382,14 +393,11 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
                 obj, is_new = BusiDataQuestion.objects.update_or_create(
                     org_no=org, data_dt=data_dt, question_stem=stem,
                     defaults={
-                        'correct_answer': float(expr),
+                        'correct_answer': val,
                         'options': [
-                            f'[{fmt_num(options["A"][0])}, {fmt_num(options["A"][1])}]',
-                            f'[{fmt_num(options["B"][0])}, {fmt_num(options["B"][1])}]',
-                            f'[{fmt_num(options["C"][0])}, {fmt_num(options["C"][1])}]',
-                            f'[{fmt_num(options["D"][0])}, {fmt_num(options["D"][1])}]',
+                            options['A'][:], options['B'][:], options['C'][:], options['D'][:],
                         ],
-                        'num_fmt': str(row[COL_FMT]).strip(),
+                        'num_fmt': fmt,
                         'table_name': str(row[COL_TABLE]).strip(),
                         'label_type': str(row[COL_LABEL]).strip(),
                         'busi_type': str(row[COL_BUSI]).strip(),
@@ -400,15 +408,16 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
                     question_type='single_choice', content=stem, org_id=org,
                     defaults={
                         'options': [
-                            f'[{options["A"][0]}, {options["A"][1]}]',
-                            f'[{options["B"][0]}, {options["B"][1]}]',
-                            f'[{options["C"][0]}, {options["C"][1]}]',
-                            f'[{options["D"][0]}, {options["D"][1]}]',
+                            f'[{fmt_num(options["A"][0], fmt)}, {fmt_num(options["A"][1], fmt)}]',
+                            f'[{fmt_num(options["B"][0], fmt)}, {fmt_num(options["B"][1], fmt)}]',
+                            f'[{fmt_num(options["C"][0], fmt)}, {fmt_num(options["C"][1], fmt)}]',
+                            f'[{fmt_num(options["D"][0], fmt)}, {fmt_num(options["D"][1], fmt)}]',
                         ],
                         'correct_answer': correct_letter,
                         'default_score': 1,
                         'org_nm': org_nm,
                         'category': category,
+                        'data_dt': data_dt,
                     },
                 )
                 obj.question = q

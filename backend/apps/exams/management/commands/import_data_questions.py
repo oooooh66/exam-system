@@ -24,19 +24,25 @@ def get_width_ratio(v: float) -> float:
 def snap_step(correct_val: float, num_fmt: str = '3') -> float:
     """返回取整步长。fmt: 1=百分比, 2=小数, 3=整数"""
     abs_v = abs(correct_val)
-    # 整数数据最小步长=1，绝不出现小数
+    # 百分比始终用小步长
+    if num_fmt == '1':
+        return 0.01
+    # 整数数据最小步长=1
     if num_fmt == '3':
         min_step = 1
-    elif num_fmt == '1':
-        min_step = 0.01
     else:
         min_step = 0.01
 
     if abs_v < 1000000:
         step = max(min_step, 100)
-        # 特别小的值：低于 step 时改用 min_step
-        if abs_v < step and num_fmt != '3':
-            step = min_step
+        if abs_v < step:
+            if num_fmt == '3':
+                if abs_v < 10:
+                    step = 1
+                elif abs_v < 100:
+                    step = 10
+            else:
+                step = min_step
     else:
         step = 1000000
     return step
@@ -140,17 +146,26 @@ def classify_table(table_name: str) -> str:
     return '资产-指标'
 
 
-def fmt_num(n: float) -> str:
-    """数值格式化：百万级加万，亿级加亿，去掉冗余零"""
+def fmt_num(n: float, num_fmt: str = '') -> str:
+    """数值格式化：百分比加%，百万级加万，亿级加亿"""
     n = float(n)
+    if num_fmt == '1':
+        v = n * 100
+        if v == int(v):
+            return f'{int(v)}%'
+        s = ('%.2f' % v).rstrip('0').rstrip('.')
+        return f'{s}%'
     if abs(n) >= 100000000:
         v = n / 100000000
         s = ('%.2f' % v).rstrip('0').rstrip('.')
         return f'{s}亿'
     if abs(n) >= 1000000:
-        v = n / 10000
-        s = ('%.0f' % v).rstrip('0').rstrip('.')
-        return f'{s}万'
+        v = int(round(n / 10000))
+        return f'{v}万'
+    if n == int(n):
+        return str(int(n))
+    s = ('%f' % n).rstrip('0').rstrip('.')
+    return s
     if n == int(n):
         return str(int(n))
     s = ('%f' % n).rstrip('0').rstrip('.')
@@ -192,13 +207,24 @@ class Command(BaseCommand):
         ws = wb.active
 
         COL_ORG_ID, COL_TABLE, COL_LABEL, COL_BUSI, COL_COLNM, COL_FMT, COL_EXPR = 0, 6, 8, 10, 12, 14, 15
-        SKIP_KW = {'同比', '占比', '比年初', '比上月', '比基数'}
+
+        def _parse_expr(raw, num_fmt: str) -> float:
+            """解析 expr_0 字段：去除万/% 单位，转回原始数值"""
+            s = str(raw).strip().replace(',', '').replace('，', '')
+            if not s:
+                return 0.0
+            if num_fmt == '3' and '万' in s:       # 万元 → 原值 * 10000
+                return float(s.replace('万', '')) * 10000
+            if num_fmt == '1' and '%' in s:          # 百分比 → 除以 100
+                return float(s.replace('%', '')) / 100
+            return float(s)
+
         raw = []
         for row in ws.iter_rows(min_row=2, values_only=True):
             col_nm = str(row[COL_COLNM]).strip() if row[COL_COLNM] else ''
-            if any(kw in col_nm for kw in SKIP_KW):
-                continue
-            if row[COL_EXPR] is None or float(row[COL_EXPR]) == 0:
+            fmt = str(row[COL_FMT]).strip() if row[COL_FMT] is not None else '2'
+            expr_raw = row[COL_EXPR]
+            if expr_raw is None:
                 continue
             org = str(row[COL_ORG_ID]).strip()
             org_nm = str(row[1]).strip() if row[1] else ''
@@ -208,8 +234,8 @@ class Command(BaseCommand):
                 'label': str(row[COL_LABEL]).strip(),
                 'busi': str(row[COL_BUSI]).strip(),
                 'col': col_nm,
-                'fmt': str(row[COL_FMT]).strip(),
-                'expr': row[COL_EXPR],
+                'fmt': fmt,
+                'expr': _parse_expr(expr_raw, fmt),
             })
         wb.close()
 
@@ -224,17 +250,23 @@ class Command(BaseCommand):
                 )
             return cat_cache[cat_name]
 
+        # fmt 映射：新模板 1=百分比,2=普通数值,3=万元 → 生成器需要的格式
+        def _map_fmt(fmt: str) -> str:
+            if fmt == '1':
+                return '1'   # 百分比，step=0.01
+            return '3'       # 普通数值/万元用整数精度
+
         created = updated = 0
         for r in raw:
-            expr = Decimal(str(r['expr']))
+            val = float(r['expr'])
             stem = build_stem(r['table'], r['label'], r['busi'], r['col'])
-            options, correct_letter = generate_interval_options(float(expr), r['fmt'])
+            options, correct_letter = generate_interval_options(val, _map_fmt(r['fmt']))
             category = get_category(r['table'])
 
             obj, is_new = BusiDataQuestion.objects.update_or_create(
                 org_no=r['org'], data_dt=data_dt, question_stem=stem,
                 defaults={
-                    'correct_answer': float(expr),
+                    'correct_answer': val,
                     'options': [options['A'][:], options['B'][:], options['C'][:], options['D'][:]],
                     'num_fmt': r['fmt'],
                     'table_name': r['table'],
@@ -244,10 +276,10 @@ class Command(BaseCommand):
                 },
             )
             options_display = [
-                f'[{fmt_num(options["A"][0])}, {fmt_num(options["A"][1])}]',
-                f'[{fmt_num(options["B"][0])}, {fmt_num(options["B"][1])}]',
-                f'[{fmt_num(options["C"][0])}, {fmt_num(options["C"][1])}]',
-                f'[{fmt_num(options["D"][0])}, {fmt_num(options["D"][1])}]',
+                f'[{fmt_num(options["A"][0], r["fmt"])}, {fmt_num(options["A"][1], r["fmt"])}]',
+                f'[{fmt_num(options["B"][0], r["fmt"])}, {fmt_num(options["B"][1], r["fmt"])}]',
+                f'[{fmt_num(options["C"][0], r["fmt"])}, {fmt_num(options["C"][1], r["fmt"])}]',
+                f'[{fmt_num(options["D"][0], r["fmt"])}, {fmt_num(options["D"][1], r["fmt"])}]',
             ]
             q, _ = BusiQuestion.objects.update_or_create(
                 question_type='single_choice', content=stem, org_id=r['org'],
@@ -257,6 +289,7 @@ class Command(BaseCommand):
                     'default_score': 1,
                     'org_nm': r.get('org_nm', ''),
                     'category': category,
+                    'data_dt': data_dt,
                 },
             )
             obj.question = q

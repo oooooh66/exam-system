@@ -124,7 +124,7 @@ class BusiQuestionListSerializer(serializers.ModelSerializer):
             'id', 'question_type', 'question_type_display',
             'content', 'options', 'correct_answer', 'analysis',
             'category', 'category_name', 'difficulty', 'difficulty_display',
-            'default_score', 'org_id', 'org_nm', 'created_at',
+            'default_score', 'org_id', 'org_nm', 'data_dt', 'created_at',
         ]
 
 
