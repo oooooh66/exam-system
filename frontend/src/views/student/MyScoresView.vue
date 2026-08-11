@@ -22,7 +22,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="submit_time" label="提交时间" width="160" />
+        <el-table-column prop="submit_time" label="提交时间" width="160">
+          <template #default="{ row }">{{ row.submit_time?.replace('T', ' ').slice(0, 19) || '' }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
             <el-button size="small" @click="loadDetail(row)">查看详情</el-button>
@@ -55,12 +57,12 @@
           <div class="answer-row">
             <span>你的答案：</span>
             <span :class="{ correct: a.is_correct, wrong: a.is_correct === false }">
-              {{ formatAnswer(a.answer, a.question_type) || '未作答' }}
+              {{ answerToLabel(a.answer, a.question_type, a.options) || '未作答' }}
             </span>
           </div>
           <div class="answer-row" v-if="a.correct_answer">
             <span>正确答案：</span>
-            <span class="correct-text">{{ formatAnswer(a.correct_answer, a.question_type) }}</span>
+            <span class="correct-text">{{ answerToLabel(a.correct_answer, a.question_type, a.options) }}</span>
           </div>
           <div class="answer-analysis" v-if="a.analysis">
             <span>解析：</span>
@@ -88,6 +90,24 @@ function formatAnswer(answer: any, type: string): string {
     return Array.isArray(answer) ? answer.join(', ') : String(answer)
   }
   return String(answer)
+}
+
+function answerToLabel(answer: any, type: string, options: any): string {
+  // 将答案字母映射成选项内容，如 'A' → '[0.15, 0.2]'
+  const letter = formatAnswer(answer, type)
+  if (!options) return letter
+  if (type === 'multiple_choice') {
+    const letters = Array.isArray(answer) ? answer : [answer]
+    return letters.map((l: string) => {
+      const idx = l.charCodeAt(0) - 65
+      return options[idx] ?? l
+    }).join(', ')
+  }
+  const idx = letter.charCodeAt(0) - 65
+  if (idx >= 0 && idx < 26 && options[idx]) {
+    return `${letter}. ${options[idx]}`
+  }
+  return letter
 }
 
 async function loadScores() {
