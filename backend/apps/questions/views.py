@@ -215,6 +215,14 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
         ).values('org_id', 'org_nm').distinct().order_by('org_id')
         return APIResponse.success(data=list(qs))
 
+    @action(methods=['get'], detail=False, url_path='data-dts')
+    def data_dts(self, request):
+        """获取所有不重复的数据月份（倒序），用于指标题库日期筛选"""
+        dts = BusiQuestion.objects.filter(
+            is_deleted=False, data_dt__isnull=False,
+        ).exclude(data_dt='').values_list('data_dt', flat=True).distinct().order_by('-data_dt')
+        return APIResponse.success(data=list(dts))
+
     @action(
         methods=['post'],
         detail=False,
@@ -342,7 +350,6 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
         from apps.exams.management.commands.import_data_questions import (
             generate_interval_options, build_stem, classify_table, fmt_num,
         )
-        from apps.exams.models import BusiDataQuestion
         from apps.questions.models import BusiQuestion, BusiQuestionCategory
         import openpyxl
 
@@ -378,6 +385,7 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
                 if expr_raw is None:
                     continue
                 val = _parse_expr(expr_raw, fmt)
+                expr_raw_str = str(expr_raw).strip()
                 org = str(row[COL_ORG_ID]).strip()
                 org_nm = str(row[1]).strip() if row[1] else ''
                 stem = build_stem(str(row[COL_TABLE]).strip(), str(row[COL_LABEL]).strip(),
@@ -390,21 +398,7 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
                     defaults={'created_by': None},
                 )
 
-                obj, is_new = BusiDataQuestion.objects.update_or_create(
-                    org_no=org, data_dt=data_dt, question_stem=stem,
-                    defaults={
-                        'correct_answer': val,
-                        'options': [
-                            options['A'][:], options['B'][:], options['C'][:], options['D'][:],
-                        ],
-                        'num_fmt': fmt,
-                        'table_name': str(row[COL_TABLE]).strip(),
-                        'label_type': str(row[COL_LABEL]).strip(),
-                        'busi_type': str(row[COL_BUSI]).strip(),
-                        'col_nm': col_nm,
-                    },
-                )
-                q, _ = BusiQuestion.objects.update_or_create(
+                q, is_new = BusiQuestion.objects.update_or_create(
                     question_type='single_choice', content=stem, org_id=org,
                     defaults={
                         'options': [
@@ -418,10 +412,9 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
                         'org_nm': org_nm,
                         'category': category,
                         'data_dt': data_dt,
+                        'analysis': expr_raw_str,
                     },
                 )
-                obj.question = q
-                obj.save(update_fields=['question'])
                 if is_new: created += 1
                 else: updated += 1
 

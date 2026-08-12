@@ -119,6 +119,14 @@ class BusiExamSessionCreateSerializer(serializers.ModelSerializer):
             cats = r.get('categories', [])
             src = r.get('question_source', 'regular')
             dt = r.get('data_dt', '')
+            # 有 data_dt 且分类含"指标"的规则自动标记为 data 来源
+            if (not src or src == 'regular') and dt and cats:
+                from apps.questions.models import BusiQuestionCategory
+                cat_names = set(BusiQuestionCategory.objects.filter(
+                    id__in=cats,
+                ).values_list('name', flat=True))
+                if any('指标' in n for n in cat_names):
+                    src = 'data'
             if (qtype or src == 'data') and count > 0:
                 ExamRule.objects.create(
                     exam_session=exam, question_type=qtype,

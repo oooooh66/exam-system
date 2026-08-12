@@ -8,7 +8,6 @@ import math
 import random
 from decimal import Decimal
 from django.core.management.base import BaseCommand, CommandError
-from apps.exams.models import BusiDataQuestion
 from apps.questions.models import BusiQuestion, BusiQuestionCategory
 
 LABELS = ['A', 'B', 'C', 'D']
@@ -236,6 +235,7 @@ class Command(BaseCommand):
                 'col': col_nm,
                 'fmt': fmt,
                 'expr': _parse_expr(expr_raw, fmt),
+                'expr_raw': str(expr_raw).strip(),
             })
         wb.close()
 
@@ -263,25 +263,13 @@ class Command(BaseCommand):
             options, correct_letter = generate_interval_options(val, _map_fmt(r['fmt']))
             category = get_category(r['table'])
 
-            obj, is_new = BusiDataQuestion.objects.update_or_create(
-                org_no=r['org'], data_dt=data_dt, question_stem=stem,
-                defaults={
-                    'correct_answer': val,
-                    'options': [options['A'][:], options['B'][:], options['C'][:], options['D'][:]],
-                    'num_fmt': r['fmt'],
-                    'table_name': r['table'],
-                    'label_type': r['label'],
-                    'busi_type': r['busi'],
-                    'col_nm': r['col'],
-                },
-            )
             options_display = [
                 f'[{fmt_num(options["A"][0], r["fmt"])}, {fmt_num(options["A"][1], r["fmt"])}]',
                 f'[{fmt_num(options["B"][0], r["fmt"])}, {fmt_num(options["B"][1], r["fmt"])}]',
                 f'[{fmt_num(options["C"][0], r["fmt"])}, {fmt_num(options["C"][1], r["fmt"])}]',
                 f'[{fmt_num(options["D"][0], r["fmt"])}, {fmt_num(options["D"][1], r["fmt"])}]',
             ]
-            q, _ = BusiQuestion.objects.update_or_create(
+            q, is_new = BusiQuestion.objects.update_or_create(
                 question_type='single_choice', content=stem, org_id=r['org'],
                 defaults={
                     'options': options_display,
@@ -290,15 +278,14 @@ class Command(BaseCommand):
                     'org_nm': r.get('org_nm', ''),
                     'category': category,
                     'data_dt': data_dt,
+                    'analysis': r['expr_raw'],
                 },
             )
-            obj.question = q
-            obj.save(update_fields=['question'])
             if is_new:
                 created += 1
             else:
                 updated += 1
 
         self.stdout.write(self.style.SUCCESS(
-            f'导入完成：新增 {created} 题，更新 {updated} 题，共 {BusiDataQuestion.objects.filter(data_dt=data_dt).count()} 题'
+            f'导入完成：新增 {created} 题，更新 {updated} 题，共 {created + updated} 题'
         ))

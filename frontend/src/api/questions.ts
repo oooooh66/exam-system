@@ -54,3 +54,8 @@ export function getOrgsApi() {
 export function randomPickApi(data: any) {
   return request.post('/questions/random-draw/', data)
 }
+
+/** 获取所有不重复的数据月份（倒序） */
+export function getDataDtsApi() {
+  return request.get('/questions/data-dts/')
+}

@@ -57,6 +57,12 @@
           </el-checkbox-group>
           <div style="font-size:11px;color:#909399">只有分管业务包含此项的考生才能看到该考试</div>
         </el-form-item>
+        <el-form-item label="指标数据日期">
+          <el-select v-model="form.data_dt" placeholder="选择数据月份" clearable style="width:100%">
+            <el-option v-for="dt in dataDts" :key="dt" :label="dt" :value="dt" />
+          </el-select>
+          <div style="font-size:11px;color:#909399">指标类题目仅抽取该日期、同机构前3位的题库数据</div>
+        </el-form-item>
         <el-divider>高级设置</el-divider>
         <el-form-item label="浮动分">
           <el-switch v-model="form.float_enabled" />
@@ -151,7 +157,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getExamsApi, createExamApi, deleteExamApi, importCandidatesApi, getExamResultsApi, adjustScoreApi, exportResultsApi } from '@/api/exams'
-import { getCategoriesApi } from '@/api/questions'
+import { getCategoriesApi, getDataDtsApi } from '@/api/questions'
 import ScoreTable from './ScoreTable.vue'
 
 const loading = ref(false)
@@ -159,11 +165,13 @@ const saving = ref(false)
 const dialogVisible = ref(false)
 const exams = ref<any[]>([])
 const categories = ref<any[]>([])
+const dataDts = ref<string[]>([])
 const formRef = ref()
 
 const form = reactive<any>({
   name: '', duration_minutes: 60, pass_score: 60,
   start_time: '', end_time: '', exam_scope: [] as string[],
+  data_dt: '',
   float_enabled: false, float_min: -10, float_max: 10,
   rules: {
     single_choice: { count: 30, categories: [] as number[] },
@@ -229,7 +237,7 @@ async function handleCreate() {
     payload.rules = []
     for (const qt of ['single_choice', 'multiple_choice', 'true_false']) {
       const r = form.rules[qt]
-      if (r.count > 0) payload.rules.push({ question_type: qt, count: r.count, categories: r.categories || [] })
+      if (r.count > 0) payload.rules.push({ question_type: qt, count: r.count, categories: r.categories || [], data_dt: form.data_dt })
     }
     await createExamApi(payload)
     ElMessage.success('考试发布成功')
@@ -320,6 +328,8 @@ onMounted(async () => {
   loadExams()
   const cr = await getCategoriesApi()
   categories.value = cr.data.data?.results || []
+  const dts = await getDataDtsApi()
+  dataDts.value = dts.data.data || []
 })
 </script>
 

@@ -90,7 +90,7 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
     def start_exam(self, request, pk=None):
         """学生开始答题（动态抽题）"""
         import random
-        from apps.exams.models import ExamRule, BusiDataQuestion
+        from apps.exams.models import ExamRule
         from apps.questions.models import BusiQuestion
 
         exam = self.get_object()
@@ -109,59 +109,60 @@ class BusiExamSessionViewSet(viewsets.ModelViewSet):
             return APIResponse.error(code=400, message='您已提交过本场考试')
 
         if created:
-            rules = ExamRule.objects.filter(exam_session=exam)
+            rules = ExamRule.objects.filter(exam_session=exam).order_by('question_type')
             if not rules.exists():
                 return APIResponse.error(code=400, message='该考试未配置抽题规则')
+
+            from apps.questions.models import BusiQuestionCategory
+            org_no = getattr(request.user, 'org_no', '')
+            org_prefix = org_no[:3] if org_no else ''
 
             drawn = []
             order = 0
             for rule in rules:
-                if rule.question_source == 'data':
-                    # 数据指标题：按机构号+数据日期过滤
-                    org_no = getattr(request.user, 'org_no', '')
-                    qs = BusiDataQuestion.objects.filter(
-                        org_no=org_no, data_dt=rule.data_dt,
-                    )
-                    if rule.categories:
-                        qs = qs.filter(table_name__in=rule.categories)
+                qs = BusiQuestion.objects.filter(
+                    is_deleted=False, question_type=rule.question_type,
+                )
+                cat_filter_applied = False
+                all_ids: list[int] = []
+
+                if rule.categories:
+                    # 区分指标分类和普通分类
+                    cat_names = dict(BusiQuestionCategory.objects.filter(
+                        id__in=rule.categories,
+                    ).values_list('id', 'name'))
+                    indicator_ids = [cid for cid, name in cat_names.items() if '指标' in name]
+                    regular_ids = [cid for cid, name in cat_names.items() if '指标' not in name]
+
+                    if regular_ids:
+                        cat_filter_applied = True
+                        all_ids.extend(list(
+                            qs.filter(category_id__in=regular_ids).values_list('id', flat=True)
+                        ))
+                    if indicator_ids and org_prefix:
+                        cat_filter_applied = True
+                        all_ids.extend(list(
+                            qs.filter(category_id__in=indicator_ids).filter(
+                                org_id__startswith=org_prefix,
+                                data_dt=rule.data_dt,
+                            ).values_list('id', flat=True)
+                        ))
+
+                if not cat_filter_applied:
                     all_ids = list(qs.values_list('id', flat=True))
-                    sampled = random.sample(all_ids, min(rule.count, len(all_ids)))
-                    for dq_id in sampled:
-                        dq = BusiDataQuestion.objects.get(id=dq_id)
-                        question = dq.question
-                        if not question:
-                            continue
-                        pq, _ = BusiPaperQuestion.objects.get_or_create(
-                            paper=exam.paper, question=question,
-                            defaults={'order': order, 'score': question.default_score},
-                        )
-                        BusiStudentAnswer.objects.get_or_create(
-                            exam_session=exam, student=request.user, paper_question=pq,
-                            defaults={'answer': None, 'status': 'draft'},
-                        )
-                        drawn.append(question.id)
-                        order += 1
-                else:
-                    # 常规题库
-                    qs = BusiQuestion.objects.filter(
-                        is_deleted=False, question_type=rule.question_type,
+                sampled = random.sample(all_ids, min(rule.count, len(all_ids)))
+                for qid in sampled:
+                    question = BusiQuestion.objects.get(id=qid)
+                    pq, _ = BusiPaperQuestion.objects.get_or_create(
+                        paper=exam.paper, question=question,
+                        defaults={'order': order, 'score': question.default_score},
                     )
-                    if rule.categories:
-                        qs = qs.filter(category_id__in=rule.categories)
-                    all_ids = list(qs.values_list('id', flat=True))
-                    sampled = random.sample(all_ids, min(rule.count, len(all_ids)))
-                    for qid in sampled:
-                        question = BusiQuestion.objects.get(id=qid)
-                        pq, _ = BusiPaperQuestion.objects.get_or_create(
-                            paper=exam.paper, question=question,
-                            defaults={'order': order, 'score': question.default_score},
-                        )
-                        BusiStudentAnswer.objects.get_or_create(
-                            exam_session=exam, student=request.user, paper_question=pq,
-                            defaults={'answer': None, 'status': 'draft'},
-                        )
-                        drawn.append(qid)
-                        order += 1
+                    BusiStudentAnswer.objects.get_or_create(
+                        exam_session=exam, student=request.user, paper_question=pq,
+                        defaults={'answer': None, 'status': 'draft'},
+                    )
+                    drawn.append(qid)
+                    order += 1
 
             submission.drawn_question_ids = drawn
             submission.save(update_fields=['drawn_question_ids'])
