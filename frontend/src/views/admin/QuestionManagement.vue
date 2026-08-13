@@ -220,6 +220,10 @@
         <el-form-item label="数据月份">
           <el-input v-model="data_dt" placeholder="例：202607" style="width:140px" />
         </el-form-item>
+        <el-form-item label="浮动区间(%)">
+          <el-input v-model="float_ratio" placeholder="留空用固定步长" style="width:140px" />
+          <div style="font-size:11px;color:#909399">如填 5，则每个答案区间上下浮动 5%；留空按固定步长生成</div>
+        </el-form-item>
         <el-form-item label="文件上传">
           <el-upload :show-file-list="true" accept=".xlsx,.xls" :auto-upload="false" :on-change="handleDataFile">
             <el-button size="small">选择 Excel 文件</el-button>
@@ -251,6 +255,7 @@ const dialogVisible = ref(false)
 const dialogKey = ref(0)
 const dataImportVisible = ref(false)
 const data_dt = ref('202607')
+const float_ratio = ref('')
 const dataFile = ref<File | null>(null)
 const dataImporting = ref(false)
 const formRef = ref()
@@ -407,6 +412,11 @@ async function doDataImport() {
     const formData = new FormData()
     formData.append('file', dataFile.value)
     formData.append('data_dt', data_dt.value)
+    if (float_ratio.value) {
+      // 用户填的是百分数（如 5），转成比例（0.05）传给后端
+      const ratio = parseFloat(float_ratio.value) / 100
+      formData.append('float_ratio', String(ratio))
+    }
     const res = await importDataQuestionsApi(formData)
     ElMessage.success(res.data.message || '导入完成')
     dataImportVisible.value = false

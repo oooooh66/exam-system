@@ -20,30 +20,15 @@ def get_width_ratio(v: float) -> float:
     return 0.06
 
 
-def snap_step(correct_val: float, num_fmt: str = '3') -> float:
-    """返回取整步长。fmt: 1=百分比, 2=小数, 3=整数"""
-    abs_v = abs(correct_val)
-    # 百分比始终用小步长
-    if num_fmt == '1':
-        return 0.01
-    # 整数数据最小步长=1
-    if num_fmt == '3':
-        min_step = 1
-    else:
-        min_step = 0.01
-
-    if abs_v < 1000000:
-        step = max(min_step, 100)
-        if abs_v < step:
-            if num_fmt == '3':
-                if abs_v < 10:
-                    step = 1
-                elif abs_v < 100:
-                    step = 10
-            else:
-                step = min_step
-    else:
-        step = 1000000
+def friendly_step(v: float, num_fmt: str = '2'):
+    """友好取整步长：保留 3 位有效数字；普通数值(num_fmt=2)强制整数步长"""
+    abs_v = abs(v)
+    if abs_v < 1e-9:
+        return 1
+    exp = math.floor(math.log10(abs_v))
+    step = 10 ** (exp - 2)
+    if num_fmt == '2':
+        step = max(step, 1)
     return step
 
 
@@ -56,60 +41,69 @@ def snap_value(val: float, step: float, direction: str) -> float:
     return round(result, decimals)
 
 
-def snap_interval(low: float, high: float, correct_val: float, step: float) -> tuple:
+def snap_interval(low: float, high: float, step: float) -> tuple:
     """将区间边界取整到友好数值"""
     lo = snap_value(low, step, 'down')
     hi = snap_value(high, step, 'up')
     if hi - lo < step * 2:
         hi = lo + step * 2
-    if correct_val < lo:
-        lo = snap_value(correct_val, step, 'down')
-    if correct_val > hi:
-        hi = snap_value(correct_val, step, 'up')
     return lo, hi
 
 
-def generate_interval_options(correct_val: float, num_fmt: str) -> tuple:
+def generate_interval_options(correct_val: float, num_fmt: str = '2', float_ratio=None) -> tuple:
     v = float(correct_val)
-    step = snap_step(v, num_fmt)
-    width = abs(v) * get_width_ratio(v)
+    step = friendly_step(v, num_fmt)
+    decimals = 0 if step >= 1 else len(str(step).split('.')[-1])
+
+    if float_ratio:
+        # 浮动区间模式：宽度 = 正确值 × 2 × 浮动比例
+        width = abs(v) * 2 * float_ratio
+    else:
+        # 固定步长模式：宽度 = 正确值 × 比例（10% 或 6%）
+        width = abs(v) * get_width_ratio(v)
     if width < step * 2:
         width = step * 2
 
     gap = width * 1.5
     pick = random.choice(['left2', 'left1'])
-    if pick == 'left2':
+    if v >= 0 and (v - 2 * gap - width / 2) < 0:
+        # 正确值太靠左，4 个区间全部向右排，避免出现负区间
+        centers = [v, v + gap, v + 2 * gap, v + 3 * gap]
+        correct_pos = 0
+    elif pick == 'left2':
         centers = [v - 2 * gap, v - gap, v, v + gap]
+        correct_pos = 2
     else:
         centers = [v - gap, v, v + gap, v + 2 * gap]
+        correct_pos = 1
 
     intervals = []
-    for c in centers:
-        lo, hi = snap_interval(c - width / 2, c + width / 2, v, step)
-        intervals.append([lo, hi])
+    for i, c in enumerate(centers):
+        lo = c - width / 2
+        hi = c + width / 2
+        if i == correct_pos:
+            lo = min(lo, v)
+            hi = max(hi, v)
+        lo, hi = snap_interval(lo, hi, step)
+        if i == correct_pos:
+            # 取整后仍确保正确值在区间内
+            if v < lo:
+                lo = snap_value(v, step, 'down')
+            if v > hi:
+                hi = snap_value(v, step, 'up')
+        intervals.append([round(lo, decimals), round(hi, decimals)])
 
-    correct_idx = 2 if pick == 'left2' else 1
-    if not (intervals[correct_idx][0] <= v <= intervals[correct_idx][1]):
-        lo, hi = snap_interval(v - width / 2, v + width / 2, v, step)
-        intervals[correct_idx] = [lo, hi]
-
-    in_range = [1 if lo <= v <= hi else 0 for lo, hi in intervals]
-    if sum(in_range) != 1:
-        lo, hi = snap_interval(v - width / 2, v + width / 2, v, step)
-        intervals[correct_idx] = [lo, hi]
-
+    # 排序
     intervals.sort(key=lambda x: x[0])
-    # 排序后重新定位正确答案在哪个区间
-    correct_idx = next(i for i, (lo, hi) in enumerate(intervals) if lo <= v <= hi)
-    decimals = len(str(step).split('.')[-1])
+
+    # 重叠修复：保证区间不重叠且顺序正确
     for i in range(1, 4):
         if intervals[i][0] <= intervals[i - 1][1]:
             intervals[i][0] = round(intervals[i - 1][1] + step, decimals)
             intervals[i][1] = max(intervals[i][1], round(intervals[i][0] + step * 2, decimals))
 
+    # 非负修复
     for i in range(4):
-        intervals[i][0] = round(intervals[i][0], decimals)
-        intervals[i][1] = round(intervals[i][1], decimals)
         if v >= 0 and intervals[i][0] < 0:
             intervals[i][0] = 0
 
@@ -118,10 +112,18 @@ def generate_interval_options(correct_val: float, num_fmt: str) -> tuple:
     for i in range(4):
         key = (intervals[i][0], intervals[i][1])
         if key in seen:
-            intervals[i][0] = int(intervals[i][0] + step * 2)
-            intervals[i][1] = int(intervals[i][0] + step * 2)
+            intervals[i][0] = round(intervals[i][0] + step * 2, decimals)
+            intervals[i][1] = round(intervals[i][0] + step * 2, decimals)
         seen.add(key)
 
+    # 定位正确值所在区间（排序/去重后位置可能变化）
+    correct_idx = 0
+    for i, (lo, hi) in enumerate(intervals):
+        if lo <= v <= hi:
+            correct_idx = i
+            break
+
+    # 打乱
     indices = list(range(4))
     random.shuffle(indices)
     shuffled = [intervals[i] for i in indices]
@@ -147,30 +149,23 @@ def classify_table(table_name: str) -> str:
     return '资产-指标'
 
 
+def _fmt_decimal(n: float) -> str:
+    """数值转字符串，去除多余尾零"""
+    if n == int(n):
+        return str(int(n))
+    return ('%f' % n).rstrip('0').rstrip('.')
+
+
 def fmt_num(n: float, num_fmt: str = '') -> str:
-    """数值格式化：百分比加%，百万级加万，亿级加亿"""
+    """按 num_fmt 加单位后缀：1=百分比, 3=万元, 2=普通数值（不缩放）"""
     n = float(n)
     if num_fmt == '1':
-        v = n * 100
-        if v == int(v):
-            return f'{int(v)}%'
-        s = ('%.2f' % v).rstrip('0').rstrip('.')
-        return f'{s}%'
-    if abs(n) >= 100000000:
-        v = n / 100000000
-        s = ('%.2f' % v).rstrip('0').rstrip('.')
-        return f'{s}亿'
-    if abs(n) >= 1000000:
-        v = int(round(n / 10000))
-        return f'{v}万'
-    if n == int(n):
-        return str(int(n))
-    s = ('%f' % n).rstrip('0').rstrip('.')
-    return s
-    if n == int(n):
-        return str(int(n))
-    s = ('%f' % n).rstrip('0').rstrip('.')
-    return s
+        return _fmt_decimal(n) + '%'
+    if num_fmt == '3':
+        if n >= 10000:               # >= 1亿（10000万）
+            return f'{n / 10000:.2f}亿'
+        return _fmt_decimal(n) + '万'
+    return _fmt_decimal(n)
 
 
 def build_stem(table_name, label_type, busi_type, col_nm):
@@ -195,10 +190,13 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('file', help='Excel 文件路径')
         parser.add_argument('--data-dt', required=True, help='数据日期，如 202607')
+        parser.add_argument('--float-ratio', type=float, default=None,
+                            help='选项浮动区间比例，如 0.05 表示上下各浮动 5%（选填，不填用固定步长）')
 
     def handle(self, *args, **options):
         filepath = options['file']
         data_dt = options['data_dt']
+        float_ratio = options.get('float_ratio')
         try:
             import openpyxl
         except ImportError:
@@ -209,15 +207,13 @@ class Command(BaseCommand):
 
         COL_ORG_ID, COL_TABLE, COL_LABEL, COL_BUSI, COL_COLNM, COL_FMT, COL_EXPR = 0, 6, 8, 10, 12, 14, 15
 
-        def _parse_expr(raw, num_fmt: str) -> float:
-            """解析 expr_0 字段：去除万/% 单位，转回原始数值"""
+        def _parse_expr(raw) -> float:
+            """解析 expr_0：只去掉单位后缀，直接存展示数值（不缩放）"""
             s = str(raw).strip().replace(',', '').replace('，', '')
+            for suffix in ('万', '亿', '%'):
+                s = s.replace(suffix, '')
             if not s:
                 return 0.0
-            if num_fmt == '3' and '万' in s:       # 万元 → 原值 * 10000
-                return float(s.replace('万', '')) * 10000
-            if num_fmt == '1' and '%' in s:          # 百分比 → 除以 100
-                return float(s.replace('%', '')) / 100
             return float(s)
 
         raw = []
@@ -236,7 +232,7 @@ class Command(BaseCommand):
                 'busi': str(row[COL_BUSI]).strip(),
                 'col': col_nm,
                 'fmt': fmt,
-                'expr': _parse_expr(expr_raw, fmt),
+                'expr': _parse_expr(expr_raw),
                 'expr_raw': str(expr_raw).strip(),
             })
         wb.close()
@@ -252,17 +248,11 @@ class Command(BaseCommand):
                 )
             return cat_cache[cat_name]
 
-        # fmt 映射：新模板 1=百分比,2=普通数值,3=万元 → 生成器需要的格式
-        def _map_fmt(fmt: str) -> str:
-            if fmt == '1':
-                return '1'   # 百分比，step=0.01
-            return '3'       # 普通数值/万元用整数精度
-
         created = updated = 0
         for r in raw:
             val = float(r['expr'])
             stem = build_stem(r['table'], r['label'], r['busi'], r['col'])
-            options, correct_letter = generate_interval_options(val, _map_fmt(r['fmt']))
+            options, correct_letter = generate_interval_options(val, r['fmt'], float_ratio)
             category = get_category(r['table'])
 
             options_display = [

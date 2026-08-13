@@ -340,6 +340,8 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
         """导入机构画像数据指标题"""
         file_obj = request.FILES.get('file')
         data_dt = request.data.get('data_dt', '')
+        float_ratio_raw = request.data.get('float_ratio', '')
+        float_ratio = float(float_ratio_raw) if float_ratio_raw not in ('', None) else None
 
         if not file_obj:
             return APIResponse.error(code=400, message='请上传 Excel 文件')
@@ -364,18 +366,13 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
 
             COL_ORG_ID, COL_TABLE, COL_LABEL, COL_BUSI, COL_COLNM, COL_FMT, COL_EXPR = 0, 6, 8, 10, 12, 14, 15
 
-            def _parse_expr(raw, num_fmt: str) -> float:
+            def _parse_expr(raw) -> float:
                 s = str(raw).strip().replace(',', '').replace('，', '')
+                for suffix in ('万', '亿', '%'):
+                    s = s.replace(suffix, '')
                 if not s:
                     return 0.0
-                if num_fmt == '3' and '万' in s:
-                    return float(s.replace('万', '')) * 10000
-                if num_fmt == '1' and '%' in s:
-                    return float(s.replace('%', '')) / 100
                 return float(s)
-
-            def _map_fmt(fmt: str) -> str:
-                return '1' if fmt == '1' else '3'
 
             created = updated = 0
             for row in ws.iter_rows(min_row=2, values_only=True):
@@ -384,13 +381,13 @@ class BusiQuestionViewSet(viewsets.ModelViewSet):
                 expr_raw = row[COL_EXPR]
                 if expr_raw is None:
                     continue
-                val = _parse_expr(expr_raw, fmt)
+                val = _parse_expr(expr_raw)
                 expr_raw_str = str(expr_raw).strip()
                 org = str(row[COL_ORG_ID]).strip()
                 org_nm = str(row[1]).strip() if row[1] else ''
                 stem = build_stem(str(row[COL_TABLE]).strip(), str(row[COL_LABEL]).strip(),
                                   str(row[COL_BUSI]).strip(), col_nm)
-                options, correct_letter = generate_interval_options(val, _map_fmt(fmt))
+                options, correct_letter = generate_interval_options(val, fmt, float_ratio)
 
                 cat_name = classify_table(str(row[COL_TABLE]).strip())
                 category, _ = BusiQuestionCategory.objects.get_or_create(
