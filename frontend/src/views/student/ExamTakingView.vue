@@ -108,7 +108,7 @@
         <el-button :disabled="currentIdx === 0" @click="goToQuestion(currentIdx - 1)">上一题</el-button>
         <el-button @click="autoSave()">保存</el-button>
         <el-button v-if="currentIdx < totalCount - 1" type="primary" @click="goToQuestion(currentIdx + 1)">下一题</el-button>
-        <el-button v-else type="danger" @click="handleSubmit">提交试卷</el-button>
+        <el-button type="danger" @click="handleSubmit">提交试卷</el-button>
       </div>
     </el-card>
 
