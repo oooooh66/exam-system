@@ -99,6 +99,8 @@ def generate_interval_options(correct_val: float, num_fmt: str) -> tuple:
         intervals[correct_idx] = [lo, hi]
 
     intervals.sort(key=lambda x: x[0])
+    # 排序后重新定位正确答案在哪个区间
+    correct_idx = next(i for i, (lo, hi) in enumerate(intervals) if lo <= v <= hi)
     decimals = len(str(step).split('.')[-1])
     for i in range(1, 4):
         if intervals[i][0] <= intervals[i - 1][1]:
