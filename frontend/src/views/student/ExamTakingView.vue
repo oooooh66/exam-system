@@ -59,7 +59,7 @@
           :value="String.fromCharCode(65 + optIdx)"
           class="option-item"
         >
-          {{ formatOption(opt) }}
+          {{ formatOption(opt, optIdx) }}
         </el-radio>
       </el-radio-group>
 
@@ -77,7 +77,7 @@
           :value="String.fromCharCode(65 + optIdx)"
           class="option-item"
         >
-          {{ formatOption(opt) }}
+          {{ formatOption(opt, optIdx) }}
         </el-checkbox>
       </el-checkbox-group>
 
@@ -177,11 +177,12 @@ const answeredCount = computed(() =>
 )
 const unansweredCount = computed(() => totalCount.value - answeredCount.value)
 
-function formatOption(opt: any): string {
+function formatOption(opt: any, idx: number): string {
+  const prefix = String.fromCharCode(65 + idx) + '. '
   if (Array.isArray(opt)) {
-    return `[${opt[0]}, ${opt[1]}]`
+    return prefix + `[${opt[0]}, ${opt[1]}]`
   }
-  return String(opt)
+  return prefix + String(opt)
 }
 
 const formattedTime = computed(() => {

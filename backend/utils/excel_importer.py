@@ -12,6 +12,7 @@ Excel 题目批量导入工具
 - 分值: 数字（可空，默认 5）
 """
 import logging
+import re
 import traceback
 
 import openpyxl
@@ -148,6 +149,8 @@ def _parse_excel_row(row, header_map, user, default_category_id):
             if label in header_map:
                 opt = _get_cell(row, header_map, label)
                 if opt:
+                    # 去掉可能带有的字母前缀（如 "A. 智慧校园" → "智慧校园"）
+                    opt = re.sub(r'^[A-Fa-f]\s*[.．、]\s*', '', opt)
                     options.append(opt)
         if len(options) < 2:
             raise ValueError('选择题至少需要 2 个选项')

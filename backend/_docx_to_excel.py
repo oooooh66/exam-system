@@ -112,10 +112,9 @@ def should_split(pending, before, qtype):
 def parse_options(s):
     items = []
     for m in re.finditer(r'([A-F])\s*[.．、]\s*(.*?)(?=\s*[A-F]\s*[.．、]|$)', s, re.S):
-        letter = m.group(1)
         content = m.group(2).strip()
         if content:
-            items.append(f"{letter}. {content}")
+            items.append(content)
     return items
 
 def strip_lead_num(stem):
